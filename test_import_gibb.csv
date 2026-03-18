@@ -1,0 +1,4 @@
+Name Student,Vorname Student,Email Student,Adresse Student,Klasse,Geburtsdatum,Dozent Name Vorname,Dozent Email,Besuchter Kurs,Modul,Bemerkungen,Note1/Lernfeld1,GewichtungLernfeld1,Name Lernfeld 1,Note2/Lernfeld2,GewichtungLernfeld2,Name Lernfeld 2 (optional),Note3/Lernfeld3,GewichtungLernfeld3,Name Lernfeld 3 (optional),Note4/Lernfeld4,GewichtungLernfeld4,Name Lernfeld 4 (optional)
+Müller,Hans,hans.mueller@student.com,"Bernstrasse 1, 3000 Bern",INF22a,15.05.2000,Meier Dozent,meier@gibb.ch,Informatiker EFZ,Modul 117,Gut gemacht,5.5,100,Lernfeld A,4.0,50,Lernfeld B,,,,,,
+Schmid,Sara,sara.schmid@student.com,"Ringweg 5, 3012 Bern",INF22a,20.10.1999,Meier Dozent,meier@gibb.ch,Informatiker EFZ,Modul 117,Sehr gut,6.0,100,Lernfeld A,5.0,50,Lernfeld B,4.5,25,Lernfeld C,,,
+Weber,Paul,paul.weber@student.com,"Gartenstrasse 10, 3007 Bern",INF22a,12.03.2001,Meier Dozent,meier@gibb.ch,Informatiker EFZ,Modul 117,Befriedigend,4.0,100,Lernfeld A,,,,,,,,

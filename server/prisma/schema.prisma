@@ -1,0 +1,234 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Teacher {
+  id              String   @id @default(uuid())
+  first_name      String
+  last_name       String
+  email           String   @unique
+  short_name      String?
+  phone           String?
+  department      String?
+  employee_number String?
+  status          String   @default("aktiv") // aktiv, inaktiv, vertretung
+  office_room     String?
+  office_hours    String?
+  qualifications  String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+model Class {
+  id                 String   @id @default(uuid())
+  name               String   @unique
+  school_year        String   @default("2024/2025")
+  semester           String?  @default("1. Halbjahr")
+  grade_level        Int?     @default(1)
+  class_teacher_id   String?
+  class_teacher_name String?
+  student_count      Int      @default(0)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+}
+
+model Student {
+  id               String   @id @default(uuid())
+  first_name       String
+  last_name        String
+  birth_date       String?  // YYYY-MM-DD
+  address          String?
+  email_school     String?  @unique
+  email_private    String?
+  class_id         String
+  class_name       String
+  school_year      String?  @default("2024/2025")
+  student_number   String?
+  remarks          String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+}
+
+model Subject {
+  id              String   @id @default(uuid())
+  name            String
+  short_name      String
+  description     String?
+  category        String   @default("fachmodul") // fachmodul, allgemeinbildung
+  teacher_name    String?
+  learning_fields String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+model TeacherSubjectAssignment {
+  id           String   @id @default(uuid())
+  teacher_id   String
+  teacher_name String
+  subject_id   String
+  subject_name String
+  class_id     String?
+  class_name   String?
+  school_year  String
+  semester     String
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+}
+
+model ClassSubjectAssignment {
+  id           String   @id @default(uuid())
+  class_id     String
+  class_name   String
+  subject_id   String
+  subject_name String
+  school_year  String
+  semester     String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+}
+
+model GradeRequest {
+  id                 String   @id @default(uuid())
+  title              String
+  class_id           String
+  class_name         String
+  subject_id         String
+  subject_name       String
+  teacher_id         String
+  teacher_name       String
+  deadline           String   // ISO date
+  semester           String   @default("1. Halbjahr")
+  school_year        String   @default("2024/2025")
+  status             String   @default("offen") // offen, hochgeladen, verarbeitet, ueberfaellig
+  file_url           String?
+  uploaded_at        String?
+  notes              String?
+  reminder_days      String   @default("7,3,1")
+  last_reminder_sent String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+}
+
+model Grade {
+  id                     String   @id @default(uuid())
+  student_id             String
+  student_name           String
+  class_id               String
+  class_name             String
+  subject_id             String
+  subject_name           String
+  teacher_id             String?
+  teacher_name           String?
+  grade_value            Float    // 1.0 - 6.0
+  weight                 Float?   @default(1.0)
+  learning_field_name    String?
+  semester               String
+  school_year            String
+  comment                String?
+  reexamination_required Boolean  @default(false)
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+}
+
+model CertificateTemplate {
+  id                String   @id @default(uuid())
+  name              String
+  description       String?
+  language          String   @default("de")
+  template_type     String   @default("builder") // builder, docx, pdf_form
+  file_url          String?
+  file_mime         String?
+  blocks            String?  // JSON string
+  layout_config     String?  // JSON string (sections, toggles, columns)
+  content_config    String?  // JSON string (text fields, placeholders)
+  assets_config     String?  // JSON string (base64/urls for logo/signatures)
+  mapping_config    String?  // JSON string (field mapping + repeat rules)
+  html_template     String?  // Generated/Cached HTML
+  is_default        Boolean  @default(false)
+  is_active         Boolean  @default(true)
+  logo_url          String?
+  signature_1_url   String?
+  signature_1_name  String?
+  signature_1_title String?
+  signature_2_url   String?
+  signature_2_name  String?
+  signature_2_title String?
+  template_version  Int      @default(1)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+}
+
+model Certificate {
+  id                String   @id @default(uuid())
+  student_id        String
+  student_name      String
+  class_id          String
+  class_name        String
+  semester          String   @default("1. Halbjahr")
+  school_year       String   @default("2024/2025")
+  issue_date        String   // ISO date
+  average_grade     Float
+  grades_count      Int
+  status            String   @default("entwurf") // entwurf, generiert, signiert, ausgegeben
+  notes             String?  // Final rendered HTML
+  pdf_file_name     String?
+  signature_url     String?
+  signed_by         String?
+  signed_at         String?
+  remarks           String?
+  verification_code String
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+}
+
+model SchoolProfile {
+  id                Int      @id @default(1)
+  school_name       String   @default("GIBB Bern")
+  unit_name         String   @default("HF IET GIBB")
+  address_line1     String?
+  address_line2     String?
+  phone             String?
+  email             String?
+  website           String?
+  city              String?
+  canton            String?
+  logo_url          String?
+  footer_text       String?
+  signature_1_name  String?
+  signature_1_title String?
+  signature_1_url   String?
+  signature_2_name  String?
+  signature_2_title String?
+  signature_2_url               String?
+  default_language              String   @default("de")
+  show_developer_credit_in_pdf  Boolean  @default(false)
+}
+
+model ArchiveRun {
+  id               String   @id @default(uuid())
+  created_at       DateTime @default(now())
+  school_year_from String
+  school_year_to   String
+  note             String?
+  status           String   @default("running") // running, done, failed
+  counts           String?  // JSON string
+  error            String?
+}
+
+model ArchiveSnapshot {
+  id             String   @id @default(uuid())
+  archive_run_id String
+  entity_type    String
+  original_id    String
+  data           String   // JSON string
+  created_at     DateTime @default(now())
+}
