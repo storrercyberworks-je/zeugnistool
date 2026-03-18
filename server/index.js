@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const xlsx = require('xlsx');
 const Papa = require('papaparse');
 
@@ -117,7 +117,7 @@ if (isElectron) {
 const renderHtmlToPdf = async (html, outputPath) => {
     if (isElectron && process.send) {
         return new Promise((resolve, reject) => {
-            const id = uuidv4();
+            const id = randomUUID();
             pdfRequests.set(id, { resolve, reject });
             process.send({ type: 'print-pdf', html, outputPath, id });
         });
