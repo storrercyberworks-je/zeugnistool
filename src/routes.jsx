@@ -98,7 +98,7 @@ export const APP_ROUTES = [
         label: 'Noten hochladen',
         icon: Upload,
         element: <UploadGrades />,
-        showInSidebar: false
+        showInSidebar: true
     },
     {
         path: '/grade-management',
