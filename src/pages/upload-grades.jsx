@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
-import { AlertCircle, CheckCircle2, Upload, FileSpreadsheet, Loader2, Info } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Upload, FileSpreadsheet, Loader2, Info, Download } from 'lucide-react'
 import { parseFile, HEADER_MAPPINGS, findHeader, getGradeColumns, getLearningFieldName, getWeight } from '@/lib/importer'
 import { MockApi, STORAGE_KEYS } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -46,6 +46,32 @@ export default function UploadGradesPage() {
             setPreviewData(data.slice(0, 5)) // Show first 5 rows as preview
         } catch (err) {
             toast({ variant: 'destructive', title: 'Fehler beim Parsen', description: err.message })
+        }
+    }
+
+    const downloadTemplate = async () => {
+        try {
+            const XLSX = await import('xlsx')
+            const templateData = [
+                {
+                    "Name Student": "Mustermann",
+                    "Vorname Student": "Max",
+                    "Email Student": "max@schule.de",
+                    "Klasse": "BFS-24",
+                    "Dozent Email": "dozent@schule.de",
+                    "Modul/Lernfeld": "Mathematik",
+                    "Note1": "5.0",
+                    "Note2": "4.5"
+                }
+            ]
+            const ws = XLSX.utils.json_to_sheet(templateData)
+            const wb = XLSX.utils.book_new()
+            XLSX.utils.book_append_sheet(wb, ws, "Noten Vorlage")
+            XLSX.writeFile(wb, "Noten_Import_Vorlage.xlsx")
+            toast({ title: 'Erfolg', description: 'Vorlage wurde heruntergeladen.' })
+        } catch (err) {
+            console.error(err)
+            toast({ variant: 'destructive', title: 'Fehler', description: 'Konnte Vorlage nicht erstellen.' })
         }
     }
 
@@ -269,9 +295,12 @@ export default function UploadGradesPage() {
                     <CardContent className="space-y-4">
                         <div className="border-2 border-dashed rounded-lg p-10 flex flex-col items-center justify-center text-center space-y-4 hover:border-primary/50 transition-colors">
                             <Upload className="h-10 w-10 text-muted-foreground" />
-                            <div>
+                            <div className="flex gap-4">
                                 <Button variant="outline" onClick={() => document.getElementById('file-upload').click()}>
-                                    Datei vom Computer wählen
+                                    Datei wählen
+                                </Button>
+                                <Button variant="secondary" onClick={downloadTemplate}>
+                                    <Download className="mr-2 h-4 w-4" /> Vorlage laden
                                 </Button>
                                 <input
                                     id="file-upload"
