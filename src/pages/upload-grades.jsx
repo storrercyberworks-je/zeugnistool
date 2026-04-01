@@ -12,7 +12,7 @@ import { parseFile, HEADER_MAPPINGS, findHeader, getGradeColumns, getLearningFie
 import { MockApi, STORAGE_KEYS } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
-import { getAuthUser, ROLES } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 
 const BATCH_SIZE = 10
 
@@ -20,6 +20,7 @@ export default function UploadGradesPage() {
     const { toast } = useToast()
     const queryClient = useQueryClient()
     const navigate = useNavigate()
+    const { user } = useAuth()
     const [searchParams] = useSearchParams()
     const requestId = searchParams.get('requestId')
 
