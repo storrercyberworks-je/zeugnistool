@@ -1,3 +1,7 @@
+const path = require('path');
+const DB_PATH = process.env.DATA_PATH ? path.join(process.env.DATA_PATH, 'dev.db') : path.join(__dirname, '../../data/dev.db');
+process.env.DATABASE_URL = `file:${DB_PATH}`;
+
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
