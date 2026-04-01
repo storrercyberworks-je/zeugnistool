@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }) => {
         try {
             const data = await api.auth.switchTenant(tenantId);
             localStorage.setItem('nm-auth-token', data.token);
-            window.location.reload(); // Reload completely to clear react-query cache and UI state!
+            window.location.href = '/dashboard'; // Hard redirect to Dashboard to exit the selection screen
         } catch (error) {
             toast({ variant: 'destructive', title: 'Mandanten-Wechsel fehlgeschlagen', description: error.message });
         }
