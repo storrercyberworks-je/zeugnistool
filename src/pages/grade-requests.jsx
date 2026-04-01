@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
-import { getAuthUser, ROLES } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 import {
     Dialog,
     DialogContent,
@@ -51,8 +51,8 @@ export default function GradeRequestsPage() {
         notes: '',
         reminder_days: '7,3,1'
     })
-    const userRole = getAuthUser().role
-    const isAdmin = userRole === ROLES.ADMIN
+    const { user } = useAuth()
+    const isAdmin = user?.role === 'admin'
 
     const { data: requests = [], isLoading } = useQuery({
         queryKey: [STORAGE_KEYS.GRADE_REQUESTS],

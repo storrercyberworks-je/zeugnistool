@@ -11,9 +11,7 @@ import {
     FileUp,
     Files,
     PenTool,
-    Layout,
-    Clock,
-    UserPlus
+    Layout
 } from 'lucide-react';
 
 // Lazy load pages for better performance and separation
@@ -35,6 +33,7 @@ const BulkUpload = lazy(() => import('./pages/bulk-upload'));
 const TemplateEditor = lazy(() => import('./pages/template-editor'));
 const Assignments = lazy(() => import('./pages/assignments'));
 const GradeEntry = lazy(() => import('./pages/grade-entry'));
+const UserManagement = lazy(() => import('./pages/users'));
 
 export const APP_ROUTES = [
     {
@@ -42,125 +41,151 @@ export const APP_ROUTES = [
         label: 'Dashboard',
         icon: LayoutDashboard,
         element: <Dashboard />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/teachers',
         label: 'Dozenten',
         icon: Users,
         element: <Teachers />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/classes',
         label: 'Klassen',
         icon: GraduationCap,
         element: <Classes />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/students',
         label: 'Schüler',
         icon: Users2,
         element: <Students />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/subjects',
         label: 'Fächer/Module',
         icon: BookOpen,
         element: <Subjects />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/assignments',
         label: 'Zuweisungen',
-        icon: UserPlus,
+        icon: Users,
         element: <Assignments />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/grade-entry',
         label: 'Notenvergabe',
         icon: PenTool,
         element: <GradeEntry />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin', 'dozent']
     },
     {
         path: '/grade-requests',
         label: 'Notenanforderungen',
         icon: FileText,
         element: <GradeRequests />,
-        showInSidebar: false
+        showInSidebar: false,
+        roles: ['admin']
     },
     {
         path: '/upload-grades',
         label: 'Noten hochladen',
         icon: Upload,
         element: <UploadGrades />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/grade-management',
         label: 'Notenverwaltung',
         icon: FileUp,
         element: <Grades />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin', 'dozent']
     },
     {
         path: '/certificates',
         label: 'Zeugnisse',
         icon: Files,
         element: <Certificates />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/certificate-templates',
         label: 'Zeugnis-Vorlagen',
         icon: PenTool,
         element: <Templates />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/certificate-builder',
         label: 'Builder',
         icon: PenTool,
         element: <CertificateBuilder />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/template-editor/:id',
         label: 'Template Editor',
         icon: PenTool,
         element: <TemplateEditor />,
-        showInSidebar: false
+        showInSidebar: false,
+        roles: ['admin']
     },
     {
         path: '/bulk-upload',
         label: 'Schüler-Import',
         icon: FileUp,
         element: <BulkUpload />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/school-profile',
         label: 'Schulprofil',
         icon: Settings,
         element: <Profile />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/system',
         label: 'System',
         icon: Layout,
         element: <SystemPage />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
     },
     {
         path: '/archive',
         label: 'Archiv',
         icon: Files,
         element: <ArchivesPage />,
-        showInSidebar: true
+        showInSidebar: true,
+        roles: ['admin']
+    },
+    {
+        path: '/users',
+        label: 'Benutzerverwaltung',
+        icon: Users,
+        element: <UserManagement />,
+        showInSidebar: true,
+        roles: ['admin']
     }
 ];

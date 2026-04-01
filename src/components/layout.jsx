@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { getAuthUser, switchRole, ROLES } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 import {
     ChevronLeft,
     ChevronRight,
     Menu,
     Moon,
     Sun,
-    Layout
+    Layout,
+    LogOut,
+    Building2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/components/theme-provider'
@@ -19,15 +21,9 @@ import { Footer } from './footer'
 export function DashboardLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
-    const [user, setUser] = useState(getAuthUser())
+    const { user, logout, activeTenant, allowedTenants, switchTenant } = useAuth()
     const { theme, setTheme } = useTheme()
     const location = useLocation()
-
-    useEffect(() => {
-        const handleAuthChange = () => setUser(getAuthUser())
-        window.addEventListener('auth-change', handleAuthChange)
-        return () => window.removeEventListener('auth-change', handleAuthChange)
-    }, [])
 
     const activeRoute = APP_ROUTES.find(r => location.pathname === r.path)
 
@@ -64,7 +60,7 @@ export function DashboardLayout({ children }) {
 
                     <ScrollArea className="flex-1 px-2 py-4">
                         <nav className="space-y-1">
-                            {APP_ROUTES.filter(r => r.showInSidebar).map((item) => (
+                            {APP_ROUTES.filter(r => r.showInSidebar && (!r.roles || user?.role && r.roles.includes(user.role))).map((item) => (
                                 <Link
                                     key={item.path}
                                     to={item.path}
@@ -93,22 +89,21 @@ export function DashboardLayout({ children }) {
                             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                             {!collapsed && <span className="ml-2">{theme === 'dark' ? 'Heller Modus' : 'Dunkler Modus'}</span>}
                         </Button>
-                        {!collapsed && (
-                            <div className="px-2 py-1 flex items-center justify-between group">
+                        {!collapsed && user && (
+                            <div className="px-2 py-1 flex flex-col gap-2 group">
                                 <div className="min-w-0">
                                     <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">{user.role}</p>
                                     <p className="text-sm font-semibold truncate leading-tight">{user.full_name}</p>
                                 </div>
                                 <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    onClick={() => switchRole(user.role === ROLES.ADMIN ? ROLES.TEACHER : ROLES.ADMIN)}
-                                    title="Rolle wechseln"
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                    onClick={logout}
+                                    title="Abmelden"
                                 >
-                                    <div className="h-4 w-4 rounded-full border border-primary flex items-center justify-center text-[8px] font-bold">
-                                        R
-                                    </div>
+                                    <LogOut className="h-4 w-4 mr-2" />
+                                    Abmelden
                                 </Button>
                             </div>
                         )}
@@ -123,27 +118,23 @@ export function DashboardLayout({ children }) {
                         {activeRoute?.label || 'Dashboard'}
                     </h2>
                     <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-full border border-border">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-70">Rolle simulieren:</span>
-                            <div className="flex gap-1">
-                                <Button
-                                    variant={user.role === ROLES.ADMIN ? 'default' : 'ghost'}
-                                    size="sm"
-                                    className="h-7 text-[10px] uppercase font-black px-3 rounded-full"
-                                    onClick={() => switchRole(ROLES.ADMIN)}
-                                >
-                                    Admin
-                                </Button>
-                                <Button
-                                    variant={user.role === ROLES.TEACHER ? 'default' : 'ghost'}
-                                    size="sm"
-                                    className="h-7 text-[10px] uppercase font-black px-3 rounded-full"
-                                    onClick={() => switchRole(ROLES.TEACHER)}
-                                >
-                                    Dozent
-                                </Button>
+                        {activeTenant && (
+                            <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-full border border-border">
+                                <Building2 className="h-4 w-4 text-primary" />
+                                <span className="text-sm font-bold truncate max-w-[150px]">{activeTenant.name}</span>
+                                {allowedTenants.length > 1 && (
+                                    <select 
+                                        className="ml-2 text-xs bg-transparent border-none outline-none cursor-pointer text-muted-foreground hover:text-foreground"
+                                        value={activeTenant.id}
+                                        onChange={(e) => switchTenant(e.target.value)}
+                                    >
+                                        {allowedTenants.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
-                        </div>
+                        )}
                     </div>
                 </header>
                 <div className="flex-1 overflow-auto">

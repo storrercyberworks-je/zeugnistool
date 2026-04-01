@@ -8,6 +8,23 @@ const fs = require('fs');
 const { randomUUID } = require('crypto');
 const xlsx = require('xlsx');
 const Papa = require('papaparse');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only-change-in-prod';
+
+// Auth Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Kein Token bereitgestellt' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Token abgelaufen oder ungültig' });
+        req.user = user;
+        next();
+    });
+};
 
 const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
@@ -170,10 +187,9 @@ const addDeveloperCreditToPdf = async (pdfPath, creditText) => {
 const createRouter = (modelName) => {
     const router = express.Router();
 
-    router.get('/', async (req, res) => {
+    router.get('/', authenticateToken, async (req, res) => {
         try {
-            const filters = {};
-            // Basic filtering for all query params
+            const filters = { tenant_id: req.user.activeTenantId };
             Object.keys(req.query).forEach(key => {
                 if (req.query[key]) filters[key] = req.query[key];
             });
@@ -184,17 +200,21 @@ const createRouter = (modelName) => {
         }
     });
 
-    router.get('/:id', async (req, res) => {
+    router.get('/:id', authenticateToken, async (req, res) => {
         try {
-            const item = await prisma[modelName].findUnique({ where: { id: req.params.id } });
-            res.json(item);
+            const items = await prisma[modelName].findMany({
+                where: { id: req.params.id, tenant_id: req.user.activeTenantId }
+            });
+            if (items.length === 0) return res.status(404).json({ error: 'Not found' });
+            res.json(items[0]);
         } catch (error) {
             res.status(500).json({ error: error.message });
         }
     });
 
-    router.post('/', async (req, res) => {
+    router.post('/', authenticateToken, async (req, res) => {
         try {
+            req.body.tenant_id = req.user.activeTenantId;
             const item = await prisma[modelName].create({ data: req.body });
             res.json(item);
         } catch (error) {
@@ -202,21 +222,25 @@ const createRouter = (modelName) => {
         }
     });
 
-    router.put('/:id', async (req, res) => {
+    router.put('/:id', authenticateToken, async (req, res) => {
         try {
-            const item = await prisma[modelName].update({
-                where: { id: req.params.id },
+            const item = await prisma[modelName].updateMany({
+                where: { id: req.params.id, tenant_id: req.user.activeTenantId },
                 data: req.body
             });
-            res.json(item);
+            if (item.count === 0) return res.status(404).json({ error: 'Not found or forbidden' });
+            res.json({ success: true, count: item.count });
         } catch (error) {
             res.status(500).json({ error: error.message });
         }
     });
 
-    router.delete('/:id', async (req, res) => {
+    router.delete('/:id', authenticateToken, async (req, res) => {
         try {
-            await prisma[modelName].delete({ where: { id: req.params.id } });
+            const item = await prisma[modelName].deleteMany({
+                where: { id: req.params.id, tenant_id: req.user.activeTenantId }
+            });
+            if (item.count === 0) return res.status(404).json({ error: 'Not found or forbidden' });
             res.json({ success: true });
         } catch (error) {
             res.status(500).json({ error: error.message });
@@ -227,7 +251,7 @@ const createRouter = (modelName) => {
 };
 
 // DOCX Template Download
-app.get('/api/templates/certificate-docx', (req, res) => {
+app.get('/api/templates/certificate-docx', authenticateToken, (req, res) => {
     const docxPath = path.join(__dirname, 'public/templates/NotenMeister_Zeugnisvorlage.docx');
     if (fs.existsSync(docxPath)) {
         const buffer = fs.readFileSync(docxPath);
@@ -237,6 +261,171 @@ app.get('/api/templates/certificate-docx', (req, res) => {
         res.status(200).send(buffer);
     } else {
         res.status(404).json({ error: 'DOCX Vorlage nicht gefunden' });
+    }
+});
+
+// AUTH SYSTEM
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const user = await prisma.user.findUnique({ where: { username } });
+        
+        if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+            return res.status(401).json({ error: 'Benutzername oder Passwort falsch' });
+        }
+        if (!user.is_active) {
+            return res.status(403).json({ error: 'Account ist deaktiviert' });
+        }
+
+        const access = await prisma.userTenantAccess.findMany({
+            where: { user_id: user.id }
+        });
+
+        if (access.length === 0) {
+            return res.status(403).json({ error: 'Keine Schulen zugewiesen' });
+        }
+
+        const tenantIds = access.map(a => a.tenant_id);
+        const allowedTenants = await prisma.tenant.findMany({
+            where: { id: { in: tenantIds }, is_active: true }
+        });
+
+        if (allowedTenants.length === 0) {
+            return res.status(403).json({ error: 'Zugewiesene Schulen sind inaktiv' });
+        }
+
+        // Default to first active allowed tenant
+        const activeTenant = allowedTenants[0];
+
+        const payload = {
+            id: user.id,
+            username: user.username,
+            full_name: user.full_name,
+            role: user.role,
+            allowedTenants,
+            activeTenantId: activeTenant.id
+        };
+
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+        res.json({ token, user: payload, activeTenant });
+    } catch (e) {
+        console.error("Login err:", e);
+        res.status(500).json({ error: 'Interner Server-Fehler beim Login' });
+    }
+});
+
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+    try {
+        const tenant = await prisma.tenant.findUnique({ where: { id: req.user.activeTenantId }});
+        res.json({ user: req.user, activeTenant: tenant, allowedTenants: req.user.allowedTenants });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/auth/switch-tenant', authenticateToken, async (req, res) => {
+    try {
+        const { tenant_id } = req.body;
+        const hasAccess = req.user.allowedTenants.some(t => t.id === tenant_id);
+        if (!hasAccess) return res.status(403).json({ error: 'Zugriff auf diese Schule verweigert' });
+
+        const { exp, iat, ...userData } = req.user;
+        const payload = { ...userData, activeTenantId: tenant_id };
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+        res.json({ token, user: payload });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Admin User Management
+app.get('/api/tenants', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        const tenants = await prisma.tenant.findMany();
+        res.json(tenants);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/users', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forsbidden' });
+        const users = await prisma.user.findMany({
+            include: { tenants: true }
+        });
+        // We shouldn't send password hashes to frontend
+        const safeUsers = users.map(u => {
+            const { password_hash, ...rest } = u;
+            return rest;
+        });
+        res.json(safeUsers);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/users', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        const { username, password, full_name, role, is_active, tenant_ids } = req.body;
+        
+        const password_hash = await bcrypt.hash(password, 10);
+        
+        const newUser = await prisma.user.create({
+            data: {
+                username, password_hash, full_name, role, is_active,
+                tenants: {
+                    create: (tenant_ids || []).map(tid => ({ tenant_id: tid }))
+                }
+            }
+        });
+        res.json({ success: true, id: newUser.id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/users/:id', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        const { username, password, full_name, role, is_active, tenant_ids } = req.body;
+        
+        const updateData = { username, full_name, role, is_active };
+        if (password) {
+            updateData.password_hash = await bcrypt.hash(password, 10);
+        }
+
+        await prisma.user.update({
+            where: { id: req.params.id },
+            data: updateData
+        });
+
+        // Update tenants
+        if (tenant_ids) {
+            await prisma.userTenantAccess.deleteMany({ where: { user_id: req.params.id } });
+            await prisma.userTenantAccess.createMany({
+                data: tenant_ids.map(tid => ({ user_id: req.params.id, tenant_id: tid }))
+            });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/users/:id', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        if (req.params.id === req.user.id) return res.status(400).json({ error: 'You cannot delete yourself' });
+        // Prisma cascade deletes aren't configured in schema for UserTenantAccess natively without relation directives, so manual delete
+        await prisma.userTenantAccess.deleteMany({ where: { user_id: req.params.id } });
+        await prisma.user.delete({ where: { id: req.params.id } });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -261,14 +450,15 @@ entities.forEach(ent => {
 });
 
 // Grade Management: Completeness Evaluation
-app.get('/api/completeness', async (req, res) => {
+app.get('/api/completeness', authenticateToken, async (req, res) => {
     const { classId, semester, schoolYear } = req.query;
     if (!classId) return res.status(400).json({ error: 'classId is required' });
 
     try {
-        const students = await prisma.student.findMany({ where: { class_id: classId } });
+        const students = await prisma.student.findMany({ where: { class_id: classId, tenant_id: req.user.activeTenantId } });
         const grades = await prisma.grade.findMany({
             where: {
+                tenant_id: req.user.activeTenantId,
                 class_id: classId,
                 semester: semester || '1. Halbjahr',
                 school_year: schoolYear || '2024/2025'
@@ -321,11 +511,11 @@ app.get('/api/completeness', async (req, res) => {
 });
 
 // Special: School Profile (Single Row)
-app.get('/api/school-profile', async (req, res) => {
+app.get('/api/school-profile', authenticateToken, async (req, res) => {
     try {
-        let profile = await prisma.schoolProfile.findUnique({ where: { id: 1 } });
+        let profile = await prisma.schoolProfile.findUnique({ where: { tenant_id: req.user.activeTenantId } });
         if (!profile) {
-            profile = await prisma.schoolProfile.create({ data: { id: 1, school_name: 'GIBB Bern' } });
+            profile = await prisma.schoolProfile.create({ data: { tenant_id: req.user.activeTenantId, school_name: 'GIBB Bern' } });
         }
         res.json(profile);
     } catch (error) {
@@ -333,10 +523,10 @@ app.get('/api/school-profile', async (req, res) => {
     }
 });
 
-app.put('/api/school-profile', async (req, res) => {
+app.put('/api/school-profile', authenticateToken, async (req, res) => {
     try {
         const profile = await prisma.schoolProfile.update({
-            where: { id: 1 },
+            where: { tenant_id: req.user.activeTenantId },
             data: req.body
         });
         res.json(profile);
@@ -346,7 +536,7 @@ app.put('/api/school-profile', async (req, res) => {
 });
 
 // File Upload
-app.post('/api/files/upload', upload.single('file'), (req, res) => {
+app.post('/api/files/upload', authenticateToken, upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).send('No file uploaded.');
     res.json({
         file_url: `/uploads/${req.file.filename}`,
@@ -355,7 +545,7 @@ app.post('/api/files/upload', upload.single('file'), (req, res) => {
 });
 
 // DOCX / PDF Template Upload
-app.post('/api/templates/docx/upload', upload.single('file'), (req, res) => {
+app.post('/api/templates/docx/upload', authenticateToken, upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ ok: false, error: 'No file uploaded.' });
 
     const ext = path.extname(req.file.originalname).toLowerCase();
@@ -372,7 +562,7 @@ app.post('/api/templates/docx/upload', upload.single('file'), (req, res) => {
 });
 
 // Data Extraction Logic
-app.post('/api/files/extract', upload.single('file'), async (req, res) => {
+app.post('/api/files/extract', authenticateToken, upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).send('No file uploaded.');
 
     const filePath = req.file.path;
@@ -400,11 +590,11 @@ app.post('/api/files/extract', upload.single('file'), async (req, res) => {
     }
 });
 
-// System Actions: Clean & Archive logic will be added here or called via standard Prisma CRUD
 // Student Import Logic (Excel)
-app.post('/api/students/import', async (req, res) => {
+app.post('/api/students/import', authenticateToken, async (req, res) => {
     try {
         const { students, school_year } = req.body;
+        const tenant_id = req.user.activeTenantId;
         const results = {
             created: 0,
             updated: 0,
@@ -427,12 +617,13 @@ app.post('/api/students/import', async (req, res) => {
 
                 // Find or create class
                 let targetClass = await prisma.class.findFirst({
-                    where: { name: className, school_year: school_year || '2024/2025' }
+                    where: { tenant_id, name: className, school_year: school_year || '2024/2025' }
                 });
 
                 if (!targetClass) {
                     targetClass = await prisma.class.create({
                         data: {
+                            tenant_id,
                             name: className,
                             school_year: school_year || '2024/2025',
                             grade_level: 2 // Default as requested
@@ -450,6 +641,7 @@ app.post('/api/students/import', async (req, res) => {
 
                 // Find or create student
                 const studentData = {
+                    tenant_id,
                     first_name: String(s.Vorname).trim(),
                     last_name: String(s.Nachname).trim(),
                     birth_date: s.Geburtstag ? String(s.Geburtstag) : null,
@@ -463,6 +655,7 @@ app.post('/api/students/import', async (req, res) => {
 
                 const existing = await prisma.student.findFirst({
                     where: {
+                        tenant_id,
                         first_name: studentData.first_name,
                         last_name: studentData.last_name,
                         class_id: targetClass.id
@@ -500,16 +693,13 @@ app.post('/api/students/import', async (req, res) => {
     }
 });
 
-app.post('/api/system/clear', async (req, res) => {
-    // Hard check could be here too, but frontend usually handles confirm
+app.post('/api/system/clear', authenticateToken, async (req, res) => {
     try {
-        const models = ['grade', 'gradeRequest', 'certificate', 'student', 'class', 'subject', 'teacher', 'certificateTemplate', 'schoolProfile'];
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Nur Admins können das System leeren.' });
+        
+        const models = ['grade', 'gradeRequest', 'certificate', 'student', 'class', 'subject', 'teacher', 'certificateTemplate'];
         for (const m of models) {
-            if (m === 'schoolProfile') {
-                await prisma[m].update({ where: { id: 1 }, data: { school_name: 'GIBB Bern' } }); // reset instead of delete
-            } else {
-                await prisma[m].deleteMany({});
-            }
+            await prisma[m].deleteMany({ where: { tenant_id: req.user.activeTenantId }});
         }
         res.json({ success: true });
     } catch (error) {
@@ -517,13 +707,14 @@ app.post('/api/system/clear', async (req, res) => {
     }
 });
 
-app.post('/api/certificates/generate', async (req, res) => {
+app.post('/api/certificates/generate', authenticateToken, async (req, res) => {
     try {
+        const tenant_id = req.user.activeTenantId;
         const { template_id, student_id, semester, school_year, issue_date } = req.body;
 
-        const template = await prisma.certificateTemplate.findUnique({ where: { id: template_id } });
-        const student = await prisma.student.findUnique({ where: { id: student_id } });
-        const profile = await prisma.schoolProfile.findUnique({ where: { id: 1 } });
+        const template = await prisma.certificateTemplate.findFirst({ where: { id: template_id, tenant_id } });
+        const student = await prisma.student.findFirst({ where: { id: student_id, tenant_id } });
+        const profile = await prisma.schoolProfile.findUnique({ where: { tenant_id } });
 
         if (!template) return res.status(404).json({ error: 'Template nicht gefunden' });
         if (!student) return res.status(404).json({ error: 'Schüler nicht gefunden' });
@@ -531,6 +722,7 @@ app.post('/api/certificates/generate', async (req, res) => {
         // Fetch all grades for this student, semester, and school year
         const grades = await prisma.grade.findMany({
             where: {
+                tenant_id,
                 student_id: student_id,
                 semester: semester || '1. Halbjahr',
                 school_year: school_year || '2024/2025'
@@ -541,7 +733,7 @@ app.post('/api/certificates/generate', async (req, res) => {
         const subjectGroups = {};
         for (const g of grades) {
             if (!subjectGroups[g.subject_id]) {
-                const subject = await prisma.subject.findUnique({ where: { id: g.subject_id } });
+                const subject = await prisma.subject.findFirst({ where: { id: g.subject_id, tenant_id } });
                 subjectGroups[g.subject_id] = {
                     subject_id: g.subject_id,
                     subject_name: subject?.name || 'Unbekannt',

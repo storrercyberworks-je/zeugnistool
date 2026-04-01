@@ -10,11 +10,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id         String   @id @default(uuid())
+  name       String
+  code       String   @unique
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  password_hash String
+  role          String   @default("dozent") // admin, dozent
+  full_name     String
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+model UserTenantAccess {
+  id         String   @id @default(uuid())
+  user_id    String
+  tenant_id  String
+  created_at DateTime @default(now())
+
+  @@unique([user_id, tenant_id])
+}
+
 model Teacher {
   id              String   @id @default(uuid())
+  tenant_id       String
   first_name      String
   last_name       String
-  email           String   @unique
+  email           String
   short_name      String?
   phone           String?
   department      String?
@@ -25,11 +55,14 @@ model Teacher {
   qualifications  String?
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
+
+  @@unique([tenant_id, email])
 }
 
 model Class {
   id                 String   @id @default(uuid())
-  name               String   @unique
+  tenant_id          String
+  name               String
   school_year        String   @default("2024/2025")
   semester           String?  @default("1. Halbjahr")
   grade_level        Int?     @default(1)
@@ -38,27 +71,33 @@ model Class {
   student_count      Int      @default(0)
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
+
+  @@unique([tenant_id, name])
 }
 
 model Student {
-  id               String   @id @default(uuid())
-  first_name       String
-  last_name        String
-  birth_date       String?  // YYYY-MM-DD
-  address          String?
-  email_school     String?  @unique
-  email_private    String?
-  class_id         String
-  class_name       String
-  school_year      String?  @default("2024/2025")
-  student_number   String?
-  remarks          String?
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
+  id             String   @id @default(uuid())
+  tenant_id      String
+  first_name     String
+  last_name      String
+  birth_date     String? // YYYY-MM-DD
+  address        String?
+  email_school   String?
+  email_private  String?
+  class_id       String
+  class_name     String
+  school_year    String?  @default("2024/2025")
+  student_number String?
+  remarks        String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([tenant_id, email_school])
 }
 
 model Subject {
   id              String   @id @default(uuid())
+  tenant_id       String
   name            String
   short_name      String
   description     String?
@@ -71,6 +110,7 @@ model Subject {
 
 model TeacherSubjectAssignment {
   id           String   @id @default(uuid())
+  tenant_id    String
   teacher_id   String
   teacher_name String
   subject_id   String
@@ -86,6 +126,7 @@ model TeacherSubjectAssignment {
 
 model ClassSubjectAssignment {
   id           String   @id @default(uuid())
+  tenant_id    String
   class_id     String
   class_name   String
   subject_id   String
@@ -98,6 +139,7 @@ model ClassSubjectAssignment {
 
 model GradeRequest {
   id                 String   @id @default(uuid())
+  tenant_id          String
   title              String
   class_id           String
   class_name         String
@@ -105,7 +147,7 @@ model GradeRequest {
   subject_name       String
   teacher_id         String
   teacher_name       String
-  deadline           String   // ISO date
+  deadline           String // ISO date
   semester           String   @default("1. Halbjahr")
   school_year        String   @default("2024/2025")
   status             String   @default("offen") // offen, hochgeladen, verarbeitet, ueberfaellig
@@ -120,6 +162,7 @@ model GradeRequest {
 
 model Grade {
   id                     String   @id @default(uuid())
+  tenant_id              String
   student_id             String
   student_name           String
   class_id               String
@@ -128,7 +171,7 @@ model Grade {
   subject_name           String
   teacher_id             String?
   teacher_name           String?
-  grade_value            Float    // 1.0 - 6.0
+  grade_value            Float // 1.0 - 6.0
   weight                 Float?   @default(1.0)
   learning_field_name    String?
   semester               String
@@ -141,18 +184,19 @@ model Grade {
 
 model CertificateTemplate {
   id                String   @id @default(uuid())
+  tenant_id         String
   name              String
   description       String?
   language          String   @default("de")
   template_type     String   @default("builder") // builder, docx, pdf_form
   file_url          String?
   file_mime         String?
-  blocks            String?  // JSON string
-  layout_config     String?  // JSON string (sections, toggles, columns)
-  content_config    String?  // JSON string (text fields, placeholders)
-  assets_config     String?  // JSON string (base64/urls for logo/signatures)
-  mapping_config    String?  // JSON string (field mapping + repeat rules)
-  html_template     String?  // Generated/Cached HTML
+  blocks            String? // JSON string
+  layout_config     String? // JSON string (sections, toggles, columns)
+  content_config    String? // JSON string (text fields, placeholders)
+  assets_config     String? // JSON string (base64/urls for logo/signatures)
+  mapping_config    String? // JSON string (field mapping + repeat rules)
+  html_template     String? // Generated/Cached HTML
   is_default        Boolean  @default(false)
   is_active         Boolean  @default(true)
   logo_url          String?
@@ -169,17 +213,18 @@ model CertificateTemplate {
 
 model Certificate {
   id                String   @id @default(uuid())
+  tenant_id         String
   student_id        String
   student_name      String
   class_id          String
   class_name        String
   semester          String   @default("1. Halbjahr")
   school_year       String   @default("2024/2025")
-  issue_date        String   // ISO date
+  issue_date        String // ISO date
   average_grade     Float
   grades_count      Int
   status            String   @default("entwurf") // entwurf, generiert, signiert, ausgegeben
-  notes             String?  // Final rendered HTML
+  notes             String? // Final rendered HTML
   pdf_file_name     String?
   signature_url     String?
   signed_by         String?
@@ -191,44 +236,47 @@ model Certificate {
 }
 
 model SchoolProfile {
-  id                Int      @id @default(1)
-  school_name       String   @default("GIBB Bern")
-  unit_name         String   @default("HF IET GIBB")
-  address_line1     String?
-  address_line2     String?
-  phone             String?
-  email             String?
-  website           String?
-  city              String?
-  canton            String?
-  logo_url          String?
-  footer_text       String?
-  signature_1_name  String?
-  signature_1_title String?
-  signature_1_url   String?
-  signature_2_name  String?
-  signature_2_title String?
-  signature_2_url               String?
-  default_language              String   @default("de")
-  show_developer_credit_in_pdf  Boolean  @default(false)
+  id                           String  @id @default(uuid())
+  tenant_id                    String  @unique
+  school_name                  String  @default("GIBB Bern")
+  unit_name                    String  @default("HF IET GIBB")
+  address_line1                String?
+  address_line2                String?
+  phone                        String?
+  email                        String?
+  website                      String?
+  city                         String?
+  canton                       String?
+  logo_url                     String?
+  footer_text                  String?
+  signature_1_name             String?
+  signature_1_title            String?
+  signature_1_url              String?
+  signature_2_name             String?
+  signature_2_title            String?
+  signature_2_url              String?
+  default_language             String  @default("de")
+  show_developer_credit_in_pdf Boolean @default(false)
 }
 
 model ArchiveRun {
   id               String   @id @default(uuid())
+  tenant_id        String
   created_at       DateTime @default(now())
   school_year_from String
   school_year_to   String
   note             String?
   status           String   @default("running") // running, done, failed
-  counts           String?  // JSON string
+  counts           String? // JSON string
   error            String?
 }
 
 model ArchiveSnapshot {
   id             String   @id @default(uuid())
+  tenant_id      String
   archive_run_id String
   entity_type    String
   original_id    String
-  data           String   // JSON string
+  data           String // JSON string
   created_at     DateTime @default(now())
 }
