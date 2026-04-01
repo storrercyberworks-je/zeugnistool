@@ -35,7 +35,25 @@ export default function BulkUpload() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [importStats, setImportStats] = useState(null);
     const [errorLogs, setErrorLogs] = useState([]);
-    const [schoolYear, setSchoolYear] = useState('2024/2025');
+    const [schoolYear, setSchoolYear] = useState('2026');
+
+    const normalizeHeader = (str) => {
+        if (!str) return '';
+        return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+    };
+
+    const HEADER_MAP = {
+        'vorname': 'first_name',
+        'name': 'last_name',
+        'nachname': 'last_name',
+        'geburtstag': 'birth_date',
+        'adresse': 'address',
+        'wohnort': 'city',
+        'plz': 'postal_code',
+        'emailgibb': 'email_school',
+        'emailprivat': 'email_private',
+        'klasse': 'class_name'
+    };
 
     const handleFileChange = async (e) => {
         const selectedFile = e.target.files[0];
@@ -45,8 +63,35 @@ export default function BulkUpload() {
         setErrorLogs([]);
 
         try {
-            const data = await api.extractData(selectedFile);
-            setPreviewData(data);
+            const rawData = await api.extractData(selectedFile);
+            
+            const normalizedData = [];
+            const tempErrors = [];
+
+            rawData.forEach((row, index) => {
+                const newRow = {};
+                for (const [key, value] of Object.entries(row)) {
+                    const normHeader = normalizeHeader(key);
+                    const mappedKey = HEADER_MAP[normHeader];
+                    if (mappedKey) {
+                        newRow[mappedKey] = value;
+                    }
+                }
+
+                // Validation
+                if (!newRow.first_name || !newRow.last_name || !newRow.class_name) {
+                    tempErrors.push(`Zeile ${index + 2}: Es fehlen Pflichtfelder (Vorname, Name oder Klasse).`);
+                } else {
+                    normalizedData.push(newRow);
+                }
+            });
+
+            if (tempErrors.length > 0) {
+                toast({ variant: 'destructive', title: 'Validierungsfehler', description: 'Einige Zeilen wurden wegen fehlender Pflichtfelder übersprungen.' });
+                setErrorLogs(tempErrors);
+            }
+
+            setPreviewData(normalizedData);
         } catch (error) {
             toast({ variant: 'destructive', title: 'Parse-Fehler', description: error.message });
         }
@@ -69,7 +114,7 @@ export default function BulkUpload() {
 
             toast({
                 title: 'Import abgeschlossen',
-                description: `${results.created} neu, ${results.updated} aktualisiert.`
+                description: `${results.classesCreated} neue Klassen erstellt, ${results.created} Schüler importiert, ${results.updated} bestehende Schüler aktualisiert.`
             });
 
             setPreviewData(null);
@@ -152,7 +197,7 @@ export default function BulkUpload() {
                     <CardTitle className="flex items-center gap-2">
                         <Upload className="h-6 w-6 text-primary" /> Excel-Liste hochladen
                     </CardTitle>
-                    <CardDescription>Erwartete Spalten: Vorname, Nachname, Klasse, Geburtstag (optional), Adresse (optional), Email Schule, Email Privat</CardDescription>
+                    <CardDescription>Erwartete Spalten: Vorname, Name, Klasse, Geburtstag (optional), Adresse (optional), Wohnort (optional), PlZ (optional), EmailGIBB, EmailPrivat</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div
@@ -236,7 +281,7 @@ export default function BulkUpload() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="text-xs text-muted-foreground pb-4">
-                        Nutzen Sie die standardisierte Klassenliste Ihrer Schulverwaltung. Stellen Sie sicher, dass die Spaltenüberschriften "Vorname", "Nachname" und "Klasse" vorhanden sind.
+                        Nutzen Sie die standardisierte Klassenliste Ihrer Schulverwaltung. Stellen Sie sicher, dass die Spaltenüberschriften "Vorname", "Name" und "Klasse" vorhanden sind.
                     </CardContent>
                     <CardFooter className="pt-0">
                         <Button variant="outline" size="sm" className="w-full text-xs" asChild>

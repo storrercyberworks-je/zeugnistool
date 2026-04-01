@@ -606,18 +606,48 @@ app.post('/api/students/import', authenticateToken, async (req, res) => {
         const involvedClasses = new Set();
         const createdClasses = new Set();
 
+        // Date Parser Helper
+        const parseImportDate = (val) => {
+            if (!val) return null;
+            const str = String(val).trim();
+            if (!str) return null;
+            
+            // Excel Date Number Check
+            if (!isNaN(str) && Number(str) > 20000) {
+                const excelEpoch = new Date(1899, 11, 30);
+                const date = new Date(excelEpoch.getTime() + (Number(str) * 86400000));
+                return date.toISOString().split('T')[0];
+            }
+            
+            // DD.MM.YYYY Check
+            const chMatch = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+            if (chMatch) {
+               const [ , d, m, y ] = chMatch;
+               return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            }
+            
+            // YYYY-MM-DD Check
+            const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (isoMatch) {
+                const [ , y, m, d ] = isoMatch;
+                return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            }
+            
+            return null; // Fallback for invalid
+        };
+
         for (const s of students) {
             try {
-                if (!s.Klasse || !s.Vorname || !s.Nachname) {
-                    throw new Error('Pflichtfelder fehlen (Klasse, Vorname, Nachname)');
+                if (!s.class_name || !s.first_name || !s.last_name) {
+                    throw new Error('Pflichtfelder fehlen (Klasse, Vorname, Name)');
                 }
 
-                const className = String(s.Klasse).trim();
-                if (!className) throw new Error('Klassenname ist leer');
+                const className = String(s.class_name).trim();
+                const schoolYear = school_year || '2024/2025';
 
                 // Find or create class
                 let targetClass = await prisma.class.findFirst({
-                    where: { tenant_id, name: className, school_year: school_year || '2024/2025' }
+                    where: { tenant_id, name: className, school_year: schoolYear }
                 });
 
                 if (!targetClass) {
@@ -625,8 +655,9 @@ app.post('/api/students/import', authenticateToken, async (req, res) => {
                         data: {
                             tenant_id,
                             name: className,
-                            school_year: school_year || '2024/2025',
-                            grade_level: 2 // Default as requested
+                            school_year: schoolYear,
+                            grade_level: 2,
+                            student_count: 0
                         }
                     });
                     results.classesCreated++;
@@ -639,33 +670,61 @@ app.post('/api/students/import', authenticateToken, async (req, res) => {
 
                 involvedClasses.add(targetClass.id);
 
-                // Find or create student
+                // Prepare Student Data
+                const parsedDate = parseImportDate(s.birth_date);
+                const emailSchool = s.email_school ? String(s.email_school).trim() : null;
+
                 const studentData = {
                     tenant_id,
-                    first_name: String(s.Vorname).trim(),
-                    last_name: String(s.Nachname).trim(),
-                    birth_date: s.Geburtstag ? String(s.Geburtstag) : null,
-                    address: s.Adresse ? String(s.Adresse) : null,
-                    email_school: s['Email Schule'] || s.EmailSchule || null,
-                    email_private: s['Email privat'] || s.EmailPrivat || null,
+                    first_name: String(s.first_name).trim(),
+                    last_name: String(s.last_name).trim(),
+                    birth_date: parsedDate,
+                    address: s.address ? String(s.address).trim() : null,
+                    city: s.city ? String(s.city).trim() : null,
+                    postal_code: s.postal_code ? String(s.postal_code).trim() : null,
+                    email_school: emailSchool,
+                    email_private: s.email_private ? String(s.email_private).trim() : null,
                     class_id: targetClass.id,
                     class_name: targetClass.name,
                     school_year: targetClass.school_year
                 };
 
-                const existing = await prisma.student.findFirst({
-                    where: {
-                        tenant_id,
-                        first_name: studentData.first_name,
-                        last_name: studentData.last_name,
-                        class_id: targetClass.id
-                    }
-                });
+                // Deduplication logic
+                let existing = null;
+                
+                // 1. Primary deduction via email
+                if (emailSchool) {
+                    existing = await prisma.student.findFirst({
+                        where: { tenant_id, email_school: emailSchool }
+                    });
+                }
+                
+                // 2. Fallback deduction via name + class
+                if (!existing) {
+                    existing = await prisma.student.findFirst({
+                        where: {
+                            tenant_id,
+                            first_name: studentData.first_name,
+                            last_name: studentData.last_name,
+                            class_id: targetClass.id
+                        }
+                    });
+                }
 
                 if (existing) {
                     await prisma.student.update({
                         where: { id: existing.id },
-                        data: studentData
+                        data: {
+                            birth_date: studentData.birth_date,
+                            address: studentData.address,
+                            city: studentData.city,
+                            postal_code: studentData.postal_code,
+                            email_school: studentData.email_school,
+                            email_private: studentData.email_private,
+                            class_id: studentData.class_id,
+                            class_name: studentData.class_name,
+                            school_year: studentData.school_year
+                        }
                     });
                     results.updated++;
                 } else {
@@ -674,7 +733,7 @@ app.post('/api/students/import', authenticateToken, async (req, res) => {
                 }
 
             } catch (err) {
-                results.errors.push(`Zeile mit ${s.Vorname || 'Unbekannt'} ${s.Nachname || ''}: ${err.message}`);
+                results.errors.push(`Zeile mit ${s.first_name || 'Unbekannt'} ${s.last_name || ''}: ${err.message}`);
             }
         }
 

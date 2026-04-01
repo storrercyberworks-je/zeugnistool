@@ -84,6 +84,8 @@ model Student {
   address        String?
   email_school   String?
   email_private  String?
+  city           String?
+  postal_code    String?
   class_id       String
   class_name     String
   school_year    String?  @default("2024/2025")
@@ -91,8 +93,6 @@ model Student {
   remarks        String?
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
-
-  @@unique([tenant_id, email_school])
 }
 
 model Subject {
