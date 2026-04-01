@@ -97,6 +97,34 @@ export default function BulkUpload() {
         }
     };
 
+    const downloadTemplate = async () => {
+        try {
+            const XLSX = await import('xlsx');
+            const templateData = [
+                {
+                    "Vorname": "Max",
+                    "Name": "Mustermann",
+                    "Geburtstag": "15.08.2005",
+                    "Adresse": "Teststrasse 1",
+                    "Wohnort": "Bern",
+                    "PlZ": "3000",
+                    "EmailGIBB": "max@gibb.ch",
+                    "EmailPrivat": "max@gmail.com",
+                    "Klasse": "IET-24"
+                }
+            ];
+            const ws = XLSX.utils.json_to_sheet(templateData);
+            // Autofit columns visually
+            ws['!cols'] = Object.keys(templateData[0]).map(k => ({ wch: Math.max(k.length, 15) }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Schueler Import");
+            XLSX.writeFile(wb, "Schueler_Import_Vorlage.xlsx");
+        } catch (err) {
+            console.error(err);
+            toast({ variant: 'destructive', title: 'Fehler', description: 'Konnte Vorlage nicht erstellen.' });
+        }
+    };
+
     const handleImport = async () => {
         if (!previewData) return;
         setIsProcessing(true);
@@ -284,10 +312,8 @@ export default function BulkUpload() {
                         Nutzen Sie die standardisierte Klassenliste Ihrer Schulverwaltung. Stellen Sie sicher, dass die Spaltenüberschriften "Vorname", "Name" und "Klasse" vorhanden sind.
                     </CardContent>
                     <CardFooter className="pt-0">
-                        <Button variant="outline" size="sm" className="w-full text-xs" asChild>
-                            <a href="/templates/vorlage_schuelerimport.xlsx" download>
-                                <Download className="h-3 w-3 mr-2" /> Vorlage herunterladen
-                            </a>
+                        <Button variant="outline" size="sm" className="w-full text-xs" onClick={downloadTemplate}>
+                            <Download className="h-3 w-3 mr-2" /> Vorlage herunterladen
                         </Button>
                     </CardFooter>
                 </Card>
