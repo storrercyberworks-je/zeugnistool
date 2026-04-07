@@ -28,9 +28,15 @@ export default function TenantSelect() {
     }
 
     const handleSelect = async (tenantId) => {
+        console.log("Tenant selected:", tenantId);
         setIsSwitching(tenantId);
-        await switchTenant(tenantId);
-        // switchTenant reloads the page, so we just wait
+        try {
+            await switchTenant(tenantId);
+            navigate('/dashboard', { replace: true });
+        } catch (error) {
+            console.error("switchTenant failed", error);
+            setIsSwitching(null);
+        }
     };
 
     return (
