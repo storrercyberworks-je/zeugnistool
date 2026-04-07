@@ -31,7 +31,6 @@ import jsPDF from 'jspdf'
 import JSZip from 'jszip'
 import ReactDOMServer from 'react-dom/server'
 import { CertificateLayout } from '@/components/certificate-layout'
-import { calculateAverages } from '@/lib/grading-utils'
 
 export default function CertificatesPage() {
     const { toast } = useToast()
