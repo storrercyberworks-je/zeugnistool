@@ -61,7 +61,11 @@ export const AuthProvider = ({ children }) => {
         try {
             const data = await api.auth.switchTenant(tenantId);
             localStorage.setItem('nm-auth-token', data.token);
-            await checkSession(); // Update application state immediately instead of reloading browser
+            
+            // Instantly update context via returned payload (bypasses GET caching issues)
+            setUser(data.user);
+            setActiveTenant(data.activeTenant);
+            
             return true;
         } catch (error) {
             toast({ variant: 'destructive', title: 'Mandanten-Wechsel fehlgeschlagen', description: error.message });

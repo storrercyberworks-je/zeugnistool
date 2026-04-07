@@ -332,7 +332,10 @@ app.post('/api/auth/switch-tenant', authenticateToken, async (req, res) => {
         const { exp, iat, ...userData } = req.user;
         const payload = { ...userData, activeTenantId: tenant_id };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
-        res.json({ token, user: payload });
+        
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenant_id }});
+        
+        res.json({ token, user: payload, activeTenant: tenant });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
