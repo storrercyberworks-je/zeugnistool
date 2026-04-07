@@ -1,418 +1,256 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MockApi, STORAGE_KEYS } from '@/lib/api'
-import {
-    ChevronLeft,
-    Save,
-    Eye,
-    Code,
-    Settings,
-    Layout,
-    Type,
-    Image as ImageIcon,
-    Table as TableIcon,
-    Signature as SignatureIcon,
-    GripVertical,
-    MoveUp,
-    MoveDown,
-    Trash2,
-    Plus,
-    Search,
-    BadgeAlert,
-    CheckCircle2,
-    Undo2,
-    FileText
-} from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
-import { useToast } from '@/hooks/use-toast'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { PlaceholderPopover } from '@/components/placeholder-popover'
-import { TableEditor } from '@/components/table-editor'
-import { buildCertificateModel, renderCertificateHTML } from '@/lib/certificate-renderer'
+import { useToast } from '@/hooks/use-toast'
+import { CertificateLayout } from '@/components/certificate-layout'
 
-const SECTIONS = {
-    HEADER: 'header',
-    TITLE: 'title',
-    STUDENT: 'student',
-    TABLE_F: 'table_f', // Fachmodule
-    TABLE_A: 'table_a', // Allgemeinbildung
-    SUMMARY: 'summary',
-    SIGNATURES: 'signatures',
-    FOOTER: 'footer'
+// Dummy Data for Preview
+const PREVIEW_STUDENT = {
+    first_name: 'Max',
+    last_name: 'Mustermann',
+    class_name: 'IET-24',
+    birth_date: '15.08.2005',
+    semester: '1. Halbjahr',
+    school_year: '2024/2025'
 };
 
-const DEFAULT_LAYOUT = [
-    { id: 'sec-header', type: SECTIONS.HEADER, active: true },
-    { id: 'sec-title', type: SECTIONS.TITLE, active: true },
-    { id: 'sec-student', type: SECTIONS.STUDENT, active: true },
-    { id: 'sec-table-f', type: SECTIONS.TABLE_F, active: true },
-    { id: 'sec-table-a', type: SECTIONS.TABLE_A, active: true },
-    { id: 'sec-summary', type: SECTIONS.SUMMARY, active: true },
-    { id: 'sec-signatures', type: SECTIONS.SIGNATURES, active: true },
-    { id: 'sec-footer', type: SECTIONS.FOOTER, active: true }
+const PREVIEW_GRADES = [
+    { subject_id: '1', subject_name: 'Berufskenntnisse', grade_value: 5.5, weight: 100 },
+    { subject_id: '2', subject_name: 'Mathematik', grade_value: 4.5, weight: 100 },
+    { subject_id: '3', subject_name: 'Englisch', grade_value: 5.0, weight: 100 },
+    { subject_id: '4', subject_name: 'ABU / Sprache und Kommunikation', grade_value: 4.5, weight: 100 },
+    { subject_id: '5', subject_name: 'ABU / Gesellschaft', grade_value: 5.0, weight: 100 },
 ];
 
-export default function CertificateBuilderPage() {
+const PREVIEW_SUBJECTS = [
+    { id: '1', name: 'Berufskenntnisse', category: 'fachmodul' },
+    { id: '2', name: 'Mathematik', category: 'fachmodul' },
+    { id: '3', name: 'Englisch', category: 'fachmodul' },
+    { id: '4', name: 'ABU / Sprache und Kommunikation', category: 'allgemeinbildung' },
+    { id: '5', name: 'ABU / Gesellschaft', category: 'allgemeinbildung' },
+];
+
+export default function TemplateEditorPage() {
     const { id } = useParams()
     const navigate = useNavigate()
     const { toast } = useToast()
     const queryClient = useQueryClient()
-    const isNew = id === 'new'
-    const fileInputRef = useRef(null)
-    const [uploadTarget, setUploadTarget] = useState(null)
-    const [activeTab, setActiveTab] = useState('layout')
-    const [showAdvanced, setShowAdvanced] = useState(false)
 
-    // Data Fetching
+    const { data: profile } = useQuery({
+        queryKey: [STORAGE_KEYS.SCHOOL_PROFILE],
+        queryFn: () => MockApi.getSchoolProfile()
+    })
+
     const { data: template, isLoading } = useQuery({
         queryKey: [STORAGE_KEYS.TEMPLATES, id],
-        queryFn: async () => {
-            if (isNew) return {
-                name: 'Neues Zeugnis',
-                template_type: 'builder',
-                layout_config: { sections: DEFAULT_LAYOUT, table_f: { columns: { module: true, grade: true, predicate: true }, zebra: true }, table_a: { columns: { module: true, grade: true, predicate: true }, zebra: true } },
-                content_config: { header_text: 'GIBB Gewerblich-Industrielle Berufsschule Bern', title_text: 'Semesterzeugnis', footer_text: 'Rechtshinweis: Gegen dieses Zeugnis kann innert 30 Tagen...' },
-                assets_config: { signatures: [{ name: 'R. Maurer', title: 'Abteilungsleiter' }, { name: 'M. Aeby', title: 'Prüfungsleiter' }] },
-                is_active: true
-            };
-            const t = await MockApi.get(STORAGE_KEYS.TEMPLATES, id);
-            return {
-                ...t,
-                layout_config: typeof t.layout_config === 'string' ? JSON.parse(t.layout_config) : (t.layout_config || { sections: DEFAULT_LAYOUT }),
-                content_config: typeof t.content_config === 'string' ? JSON.parse(t.content_config) : (t.content_config || {}),
-                assets_config: typeof t.assets_config === 'string' ? JSON.parse(t.assets_config) : (t.assets_config || {})
-            };
-        },
+        queryFn: () => MockApi.get(STORAGE_KEYS.TEMPLATES, id)
     })
 
-    const [localTemplate, setLocalTemplate] = useState(null)
+    const [formState, setFormState] = useState(null)
 
     useEffect(() => {
-        if (template) setLocalTemplate(template)
+        if (template) {
+            setFormState(template)
+        }
     }, [template])
 
-    // Mutations
-    const saveMutation = useMutation({
-        mutationFn: (data) => {
-            const payload = {
-                ...data,
-                // Do not generate HTML cache for builder template, renderer uses config
-                layout_config: JSON.stringify(data.layout_config),
-                content_config: JSON.stringify(data.content_config),
-                assets_config: JSON.stringify(data.assets_config),
-                template_version: (data.template_version || 0) + 1
-            };
-            return isNew
-                ? MockApi.create(STORAGE_KEYS.TEMPLATES, payload)
-                : MockApi.update(STORAGE_KEYS.TEMPLATES, id, payload);
-        },
+    const updateMutation = useMutation({
+        mutationFn: (data) => MockApi.update(STORAGE_KEYS.TEMPLATES, id, data),
         onSuccess: () => {
             queryClient.invalidateQueries([STORAGE_KEYS.TEMPLATES])
-            toast({ title: 'Erfolg', description: 'Vorlage wurde gespeichert.' })
-            navigate('/certificate-templates')
+            toast({ title: 'Erfolg', description: 'Vorlage gespeichert.' })
         }
     })
 
-    const previewHtml = useMemo(() => {
-        if (!localTemplate) return '';
-        const dummyModel = buildCertificateModel(null, [], [], null, null, localTemplate);
-        return renderCertificateHTML(localTemplate, dummyModel);
-    }, [localTemplate]);
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target
+        setFormState(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }))
+    }
 
-    // Handlers
-    const moveSection = (index, dir) => {
-        const sections = [...localTemplate.layout_config.sections];
-        const target = index + dir;
-        if (target < 0 || target >= sections.length) return;
-        [sections[index], sections[target]] = [sections[target], sections[index]];
-        setLocalTemplate({
-            ...localTemplate,
-            layout_config: { ...localTemplate.layout_config, sections }
-        });
-    };
+    const handleSwitch = (name, checked) => {
+        setFormState(prev => ({
+            ...prev,
+            [name]: checked
+        }))
+    }
 
-    const toggleSection = (id) => {
-        const sections = localTemplate.layout_config.sections.map(s =>
-            s.id === id ? { ...s, active: !s.active } : s
-        );
-        setLocalTemplate({
-            ...localTemplate,
-            layout_config: { ...localTemplate.layout_config, sections }
-        });
-    };
+    const handleFileChange = (e, fieldName) => {
+        const file = e.target.files[0]
+        if (!file) return
 
-    const triggerUpload = (target) => {
-        setUploadTarget(target);
-        fileInputRef.current?.click();
-    };
-
-    const handleFileUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file || !uploadTarget) return;
-        // Mock upload or real upload
-        const response = await MockApi.uploadFile(file);
-        if (uploadTarget === 'logo') {
-            setLocalTemplate({
-                ...localTemplate,
-                assets_config: { ...localTemplate.assets_config, logo_url: response.file_url }
-            });
-        } else if (uploadTarget.startsWith('sig')) {
-            const idx = parseInt(uploadTarget.split('_')[1]);
-            setLocalTemplate({
-                ...localTemplate,
-                assets_config: { ...localTemplate.assets_config, [`signature_${idx}_url`]: response.file_url }
-            });
+        if (file.size > 2 * 1024 * 1024) {
+            toast({ variant: 'destructive', title: 'Fehler', description: 'Bild max 2MB groß.' })
+            return
         }
-    };
 
-    if (isLoading || !localTemplate) return <div className="p-8">Laden...</div>
+        const reader = new FileReader()
+        reader.onloadend = () => {
+            setFormState(prev => ({ ...prev, [fieldName]: reader.result }))
+        }
+        reader.readAsDataURL(file)
+    }
+
+    const handleSave = () => {
+        updateMutation.mutate(formState)
+    }
+
+    if (isLoading || !formState) {
+        return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-muted-foreground w-8 h-8" /></div>
+    }
 
     return (
-        <div className="h-[calc(100vh-8rem)] flex flex-col gap-6">
-            <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" />
-
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate('/certificate-templates')}>
-                        <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <div>
-                        <Input
-                            value={localTemplate.name}
-                            onChange={(e) => setLocalTemplate({ ...localTemplate, name: e.target.value })}
-                            className="text-2xl font-bold border-none bg-transparent p-0 h-auto focus-visible:ring-0"
-                        />
-                        <p className="text-xs text-muted-foreground">Editor: 3-Tab guided system</p>
+        <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-muted/40 -m-6">
+            
+            {/* Sidebar Configuration */}
+            <div className="w-[450px] bg-background border-r flex flex-col h-full z-10 shrink-0 shadow-sm">
+                <div className="p-4 border-b flex items-center justify-between bg-card text-card-foreground">
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => navigate('/certificate-templates')}><ArrowLeft className="w-5 h-5" /></Button>
+                        <h2 className="font-bold truncate max-w-[200px]">{formState.name}</h2>
                     </div>
+                    <Button size="sm" onClick={handleSave} disabled={updateMutation.isLoading}>
+                        {updateMutation.isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Speichern
+                    </Button>
                 </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setShowAdvanced(!showAdvanced)}>
-                        <Code className="mr-2 h-4 w-4" /> {showAdvanced ? 'Hide Code' : 'Advanced'}
-                    </Button>
-                    <Button onClick={() => saveMutation.mutate(localTemplate)} disabled={saveMutation.isLoading}>
-                        <Save className="mr-2 h-4 w-4" /> {saveMutation.isLoading ? 'Speichere...' : 'Speichern'}
-                    </Button>
+                
+                <div className="p-6 overflow-y-auto space-y-10">
+                    
+                    <section className="space-y-4">
+                        <h3 className="font-bold text-lg border-b pb-2">Texte & Allgemein</h3>
+                        <div className="space-y-2">
+                            <Label>Zeugnis-Titel</Label>
+                            <Input name="title" value={formState.title || ''} onChange={handleChange} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Untertitel (z.B. 1. Halbjahr)</Label>
+                            <Input name="subtitle" value={formState.subtitle || ''} onChange={handleChange} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Introtext (Optional)</Label>
+                            <Textarea name="intro_text" value={formState.intro_text || ''} onChange={handleChange} placeholder="Der Schüler hat..." />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Footer (Standard-Zusatz)</Label>
+                            <Input name="footer_text" value={formState.footer_text || ''} onChange={handleChange} placeholder="Gültig ohne Unterschrift etc." />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Rundung Schnitt</Label>
+                            <select name="rounding" value={formState.rounding || '0.1'} onChange={handleChange} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                                <option value="0.1">0.1 (z.B. 4.6)</option>
+                                <option value="0.5">0.5 (Ganze/Halbe Noten)</option>
+                                <option value="0.01">0.01 (z.B. 4.58)</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <section className="space-y-4">
+                        <h3 className="font-bold text-lg border-b pb-2">Darstellung / Optionen</h3>
+                        <div className="flex items-center justify-between border p-3 rounded-lg bg-card">
+                            <div>
+                                <Label className="text-base">Schul-Logo anzeigen</Label>
+                                <p className="text-xs text-muted-foreground">Logo oben rechts einblenden</p>
+                            </div>
+                            <Switch checked={formState.show_logo} onCheckedChange={(c) => handleSwitch('show_logo', c)} />
+                        </div>
+                        {formState.show_logo && (
+                            <div className="space-y-2">
+                                <Label>Eigenes Logo hochladen hochladen (Überschreibt Schul-Profil)</Label>
+                                <div className="flex items-center gap-4">
+                                    {formState.logo_url && <img src={formState.logo_url} className="h-10 object-contain border bg-white p-1" />}
+                                    <Input type="file" accept="image/png, image/jpeg, image/svg+xml" onChange={(e) => handleFileChange(e, 'logo_url')} />
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex items-center justify-between border p-3 rounded-lg bg-card mt-2">
+                            <div>
+                                <Label className="text-base">Gewichtungen einblenden</Label>
+                                <p className="text-xs text-muted-foreground">Spalte für Gewichtungen in der Tabelle anzeigen</p>
+                            </div>
+                            <Switch checked={formState.show_weights} onCheckedChange={(c) => handleSwitch('show_weights', c)} />
+                        </div>
+                    </section>
+
+                    <section className="space-y-6">
+                        <h3 className="font-bold text-lg border-b pb-2">Signaturen</h3>
+                        
+                        <div className="border border-primary/20 rounded-lg p-4 bg-primary/5 space-y-4">
+                            <div className="flex justify-between items-center mb-2 border-b border-primary/10 pb-2">
+                                <Label className="font-bold text-base">Erste Unterschrift (Links)</Label>
+                                <Switch checked={formState.show_signature_1} onCheckedChange={(c) => handleSwitch('show_signature_1', c)} />
+                            </div>
+                            {formState.show_signature_1 && (
+                                <>
+                                    <div className="space-y-2">
+                                        <Label>Name</Label>
+                                        <Input name="signature_1_name" value={formState.signature_1_name || ''} onChange={handleChange} placeholder="Klassenlehrer/in" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Rolle / Titel</Label>
+                                        <Input name="signature_1_title" value={formState.signature_1_title || ''} onChange={handleChange} placeholder="Unterschrift" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Digitale Signatur (Bild)</Label>
+                                        <div className="flex items-center gap-4">
+                                            {formState.signature_1_url ? <img src={formState.signature_1_url} className="h-10 border bg-white" /> : <div className="h-10 w-20 border border-dashed flex items-center justify-center bg-background"><ImageIcon className="w-4 h-4 text-muted-foreground" /></div>}
+                                            <Input type="file" accept="image/png, image/jpeg" onChange={(e) => handleFileChange(e, 'signature_1_url')} />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="border border-primary/20 rounded-lg p-4 bg-primary/5 space-y-4">
+                            <div className="flex justify-between items-center mb-2 border-b border-primary/10 pb-2">
+                                <Label className="font-bold text-base">Zweite Unterschrift (Rechts)</Label>
+                                <Switch checked={formState.show_signature_2} onCheckedChange={(c) => handleSwitch('show_signature_2', c)} />
+                            </div>
+                            {formState.show_signature_2 && (
+                                <>
+                                    <div className="space-y-2">
+                                        <Label>Name</Label>
+                                        <Input name="signature_2_name" value={formState.signature_2_name || ''} onChange={handleChange} placeholder="Schulleitung" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Rolle / Titel</Label>
+                                        <Input name="signature_2_title" value={formState.signature_2_title || ''} onChange={handleChange} placeholder="Unterschrift" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Digitale Signatur (Bild)</Label>
+                                        <div className="flex items-center gap-4">
+                                            {formState.signature_2_url ? <img src={formState.signature_2_url} className="h-10 border bg-white" /> : <div className="h-10 w-20 border border-dashed flex items-center justify-center bg-background"><ImageIcon className="w-4 h-4 text-muted-foreground" /></div>}
+                                            <Input type="file" accept="image/png, image/jpeg" onChange={(e) => handleFileChange(e, 'signature_2_url')} />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </section>
                 </div>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
-                {/* Editor Side */}
-                <Card className="flex flex-col overflow-hidden border-2">
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
-                        <TabsList className="grid w-full grid-cols-3 rounded-none border-b h-12 bg-muted/20">
-                            <TabsTrigger value="layout" className="data-[state=active]:bg-background">1. Layout</TabsTrigger>
-                            <TabsTrigger value="content" className="data-[state=active]:bg-background">2. Inhalte</TabsTrigger>
-                            <TabsTrigger value="assets" className="data-[state=active]:bg-background">3. Assets</TabsTrigger>
-                        </TabsList>
-
-                        <div className="flex-1 overflow-auto bg-card">
-                            <TabsContent value="layout" className="p-4 m-0 space-y-6">
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between bg-primary/5 p-4 rounded-lg border border-primary/10">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-primary/10 rounded-full"><FileText className="h-4 w-4 text-primary" /></div>
-                                            <div>
-                                                <div className="text-sm font-bold">A4 Hochformat</div>
-                                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Format-Einstellung</div>
-                                            </div>
-                                        </div>
-                                        <Switch checked disabled />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label className="text-[10px] font-bold uppercase text-muted-foreground px-1">Sektions-Reihenfolge</Label>
-                                        <div className="space-y-2">
-                                            {localTemplate.layout_config.sections.map((sec, idx) => (
-                                                <div key={sec.id} className={`flex items-center justify-between p-3 rounded-lg border ${sec.active ? 'bg-card' : 'bg-muted/30 opacity-60'} transition-all`}>
-                                                    <div className="flex items-center gap-3">
-                                                        <GripVertical className="h-3 w-3 text-muted-foreground cursor-grab" />
-                                                        <div className="space-y-0.5">
-                                                            <div className="text-sm font-medium capitalize">{sec.type.replace('_', ' ')}</div>
-                                                            <Badge variant="outline" className="text-[9px] uppercase">{sec.id}</Badge>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveSection(idx, -1)} disabled={idx === 0}><MoveUp className="h-3 w-3" /></Button>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => moveSection(idx, 1)} disabled={idx === localTemplate.layout_config.sections.length - 1}><MoveDown className="h-3 w-3" /></Button>
-                                                        <Separator orientation="vertical" className="h-4 mx-1" />
-                                                        <Switch checked={sec.active} onCheckedChange={() => toggleSection(sec.id)} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    <TableEditor
-                                        title="Fachmodule (Table F)"
-                                        config={localTemplate.layout_config.table_f || {}}
-                                        onChange={(val) => setLocalTemplate({ ...localTemplate, layout_config: { ...localTemplate.layout_config, table_f: val } })}
-                                    />
-                                    <Separator />
-                                    <TableEditor
-                                        title="Allgemeinbildung (Table A)"
-                                        config={localTemplate.layout_config.table_a || {}}
-                                        onChange={(val) => setLocalTemplate({ ...localTemplate, layout_config: { ...localTemplate.layout_config, table_a: val } })}
-                                    />
-                                </div>
-                            </TabsContent>
-
-                            <TabsContent value="content" className="p-4 m-0 space-y-6">
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label className="text-sm font-bold">Header Text</Label>
-                                            <PlaceholderPopover onSelect={(v) => setLocalTemplate({ ...localTemplate, content_config: { ...localTemplate.content_config, header_text: (localTemplate.content_config.header_text || '') + v } })} />
-                                        </div>
-                                        <Input
-                                            value={localTemplate.content_config.header_text}
-                                            onChange={(e) => setLocalTemplate({ ...localTemplate, content_config: { ...localTemplate.content_config, header_text: e.target.value } })}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label className="text-sm font-bold">Titel</Label>
-                                            <PlaceholderPopover onSelect={(v) => setLocalTemplate({ ...localTemplate, content_config: { ...localTemplate.content_config, title_text: (localTemplate.content_config.title_text || '') + v } })} />
-                                        </div>
-                                        <Input
-                                            value={localTemplate.content_config.title_text}
-                                            onChange={(e) => setLocalTemplate({ ...localTemplate, content_config: { ...localTemplate.content_config, title_text: e.target.value } })}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label className="text-sm font-bold">Fusszeile (Footer)</Label>
-                                            <PlaceholderPopover onSelect={(v) => setLocalTemplate({ ...localTemplate, content_config: { ...localTemplate.content_config, footer_text: (localTemplate.content_config.footer_text || '') + v } })} />
-                                        </div>
-                                        <Textarea
-                                            className="min-h-[100px] text-xs"
-                                            value={localTemplate.content_config.footer_text}
-                                            onChange={(e) => setLocalTemplate({ ...localTemplate, content_config: { ...localTemplate.content_config, footer_text: e.target.value } })}
-                                        />
-                                    </div>
-                                </div>
-                            </TabsContent>
-
-                            <TabsContent value="assets" className="p-4 m-0 space-y-6">
-                                <div className="space-y-6">
-                                    <div className="space-y-3">
-                                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Schullogo</Label>
-                                        <div className="flex items-center gap-4 p-4 border rounded-xl bg-card">
-                                            <div className="h-16 w-24 border-2 border-dashed rounded flex flex-col items-center justify-center bg-muted/20 overflow-hidden">
-                                                {localTemplate.assets_config.logo_url ? (
-                                                    <img src={localTemplate.assets_config.logo_url} className="h-full w-full object-contain" />
-                                                ) : (
-                                                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                                                )}
-                                            </div>
-                                            <div className="flex-1 space-y-2">
-                                                <div className="text-sm font-medium">Logo hochladen</div>
-                                                <div className="flex gap-2">
-                                                    <Button size="sm" variant="outline" onClick={() => triggerUpload('logo')}>Wählen</Button>
-                                                    {localTemplate.assets_config.logo_url && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setLocalTemplate({ ...localTemplate, assets_config: { ...localTemplate.assets_config, logo_url: null } })}>Löschen</Button>}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    <div className="space-y-4">
-                                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Unterschriften</Label>
-                                        {[1, 2].map((num, i) => (
-                                            <div key={num} className="p-4 border rounded-xl bg-card space-y-4">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="h-12 w-20 border-2 border-dashed rounded flex items-center justify-center bg-muted/20 overflow-hidden">
-                                                        {localTemplate.assets_config[`signature_${num}_url`] ? (
-                                                            <img src={localTemplate.assets_config[`signature_${num}_url`]} className="h-full w-full object-contain" />
-                                                        ) : (
-                                                            <SignatureIcon className="h-5 w-5 text-muted-foreground" />
-                                                        )}
-                                                    </div>
-                                                    <Button size="xs" variant="outline" onClick={() => triggerUpload(`sig_${num}`)}>Upload</Button>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="space-y-1">
-                                                        <Label className="text-[10px]">Name</Label>
-                                                        <Input
-                                                            className="h-8 text-xs"
-                                                            value={localTemplate.assets_config.signatures?.[i]?.name || ''}
-                                                            onChange={(e) => {
-                                                                const sigs = [...(localTemplate.assets_config.signatures || [])];
-                                                                sigs[i] = { ...sigs[i], name: e.target.value };
-                                                                setLocalTemplate({ ...localTemplate, assets_config: { ...localTemplate.assets_config, signatures: sigs } });
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-1">
-                                                        <Label className="text-[10px]">Titel</Label>
-                                                        <Input
-                                                            className="h-8 text-xs"
-                                                            value={localTemplate.assets_config.signatures?.[i]?.title || ''}
-                                                            onChange={(e) => {
-                                                                const sigs = [...(localTemplate.assets_config.signatures || [])];
-                                                                sigs[i] = { ...sigs[i], title: e.target.value };
-                                                                setLocalTemplate({ ...localTemplate, assets_config: { ...localTemplate.assets_config, signatures: sigs } });
-                                                            }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </TabsContent>
-                        </div>
-                    </Tabs>
-                </Card>
-
-                {/* Preview Side */}
-                <Card className="flex flex-col overflow-hidden bg-gray-200 shadow-inner border-2">
-                    <CardHeader className="py-2 px-4 border-b bg-white flex flex-row items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Eye className="h-4 w-4 text-primary" />
-                            <span className="text-[10px] font-bold uppercase">Live Vorschau (Demodaten)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-[9px]">210 x 297 mm</Badge>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="flex-1 overflow-auto p-8 flex justify-center">
-                        <div
-                            className="bg-white text-black shadow-2xl p-[20mm] w-[210mm] min-h-[297mm] transition-all duration-300 transform origin-top shrink-0 border"
-                            style={{ boxShadow: '0 0 50px rgba(0,0,0,0.1)' }}
-                            dangerouslySetInnerHTML={{ __html: previewHtml }}
-                        />
-                    </CardContent>
-                </Card>
+            {/* Live Preview Pane */}
+            <div className="flex-[2] bg-[#f0f0f0] overflow-y-auto p-[50px] flex justify-center items-start shadow-inner">
+                <div className="transition-all transform origin-top lg:scale-100 xl:scale-100 scale-75 shadow-2xl">
+                    <CertificateLayout
+                        student={PREVIEW_STUDENT}
+                        grades={PREVIEW_GRADES}
+                        subjects={PREVIEW_SUBJECTS}
+                        template={formState}
+                        schoolProfile={profile}
+                    />
+                </div>
             </div>
 
-            {showAdvanced && (
-                <Card className="border-t-4 border-primary">
-                    <CardHeader className="py-3 flex flex-row items-center justify-between">
-                        <CardTitle className="text-sm">Generierter HTML-Output (Read Only)</CardTitle>
-                        <Button variant="ghost" size="sm" onClick={() => setShowAdvanced(false)}>Schliessen</Button>
-                    </CardHeader>
-                    <CardContent>
-                        <Textarea
-                            readOnly
-                            className="font-mono text-[10px] h-[300px] bg-muted/20"
-                            value={generatePreviewHtml(localTemplate)}
-                        />
-                    </CardContent>
-                </Card>
-            )}
         </div>
     )
 }

@@ -1,0 +1,4 @@
+Vorname,Name,Klasse,Geburtstag,Adresse,Wohnort,PlZ,EmailGIBB,EmailPrivat
+Lisa,Müller,HBB-25,12.05.2001,Teststraße 5,Bern,3000,lisa@gibb.ch,lisa@gmail.com
+Max,Mustermann,,15.08.2005,,,,,
+Tim,Tester,IET-24,44500,Testweg 10,Zürich,8000,tim@gibb.ch,

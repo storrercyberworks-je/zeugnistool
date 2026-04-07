@@ -29,7 +29,9 @@ import { evaluateReexamination, evaluatePromotion } from '@/lib/reexamination'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import JSZip from 'jszip'
-import { buildCertificateModel, renderCertificateHTML } from '@/lib/certificate-renderer'
+import ReactDOMServer from 'react-dom/server'
+import { CertificateLayout } from '@/components/certificate-layout'
+import { calculateAverages } from '@/lib/grading-utils'
 
 export default function CertificatesPage() {
     const { toast } = useToast()
@@ -61,14 +63,7 @@ export default function CertificatesPage() {
 
     const { data: templates = [] } = useQuery({
         queryKey: [STORAGE_KEYS.TEMPLATES],
-        queryFn: async () => {
-            const list = await MockApi.list(STORAGE_KEYS.TEMPLATES);
-            return list.map(t => ({
-                ...t,
-                layout_config: typeof t.layout_config === 'string' ? JSON.parse(t.layout_config) : (t.layout_config || {}),
-                blocks: typeof t.blocks === 'string' ? JSON.parse(t.blocks) : (t.blocks || [])
-            }));
-        },
+        queryFn: () => MockApi.list(STORAGE_KEYS.TEMPLATES),
     })
 
     const { data: grades = [] } = useQuery({
@@ -107,11 +102,18 @@ export default function CertificatesPage() {
         const semester = '1. Halbjahr'
         const school_year = '2024/2025'
 
-        // Central Model generation
-        const model = buildCertificateModel(student, grades, subjects, semester, school_year, template)
+        // Render React Component directly to HTML String!
+        const html = ReactDOMServer.renderToString(
+            <CertificateLayout 
+                student={student} 
+                grades={grades.filter(g => g.student_id === student.id)} 
+                subjects={subjects} 
+                template={template} 
+            />
+        )
 
-        // Central HTML generation (no mustache tokens left)
-        const html = renderCertificateHTML(template, model)
+        // Calculate global average manually
+        const globalAvg = calculateAverages(grades.filter(g => g.student_id === student.id), 1, 0.1).final;
 
         return {
             html,
@@ -123,10 +125,10 @@ export default function CertificatesPage() {
                 semester,
                 school_year,
                 issue_date: new Date().toISOString(),
-                average_grade: model.summary.average,
-                grades_count: model.fachmoduleRows.length + model.allgemeinbildungRows.length,
+                average_grade: globalAvg || 0,
+                grades_count: grades.filter(g => g.student_id === student.id).length,
                 status: 'generiert',
-                notes: html,
+                notes: html, // We can still store the generated DOM layout for stability 
                 verification_code: Math.random().toString(36).substring(2, 10).toUpperCase()
             }
         }

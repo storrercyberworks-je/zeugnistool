@@ -28,7 +28,6 @@ const Templates = lazy(() => import('./pages/templates'));
 const Profile = lazy(() => import('./pages/profile'));
 const SystemPage = lazy(() => import('./pages/system'));
 const ArchivesPage = lazy(() => import('./pages/archives'));
-const CertificateBuilder = lazy(() => import('./pages/certificate-builder'));
 const BulkUpload = lazy(() => import('./pages/bulk-upload'));
 const TemplateEditor = lazy(() => import('./pages/template-editor'));
 const Assignments = lazy(() => import('./pages/assignments'));
@@ -129,14 +128,6 @@ export const APP_ROUTES = [
         label: 'Zeugnis-Vorlagen',
         icon: PenTool,
         element: <Templates />,
-        showInSidebar: true,
-        roles: ['admin']
-    },
-    {
-        path: '/certificate-builder',
-        label: 'Builder',
-        icon: PenTool,
-        element: <CertificateBuilder />,
         showInSidebar: true,
         roles: ['admin']
     },

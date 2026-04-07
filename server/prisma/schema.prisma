@@ -188,17 +188,18 @@ model CertificateTemplate {
   name              String
   description       String?
   language          String   @default("de")
-  template_type     String   @default("builder") // builder, docx, pdf_form
-  file_url          String?
-  file_mime         String?
-  blocks            String? // JSON string
-  layout_config     String? // JSON string (sections, toggles, columns)
-  content_config    String? // JSON string (text fields, placeholders)
-  assets_config     String? // JSON string (base64/urls for logo/signatures)
-  mapping_config    String? // JSON string (field mapping + repeat rules)
-  html_template     String? // Generated/Cached HTML
-  is_default        Boolean  @default(false)
-  is_active         Boolean  @default(true)
+  title             String   @default("Semesterzeugnis")
+  subtitle          String?
+  intro_text        String?
+  footer_text       String?
+  
+  show_logo         Boolean  @default(true)
+  show_signature_1  Boolean  @default(true)
+  show_signature_2  Boolean  @default(false)
+  show_weights      Boolean  @default(true)
+  show_comments     Boolean  @default(false)
+  rounding          String   @default("0.1")
+  
   logo_url          String?
   signature_1_url   String?
   signature_1_name  String?
@@ -206,7 +207,10 @@ model CertificateTemplate {
   signature_2_url   String?
   signature_2_name  String?
   signature_2_title String?
-  template_version  Int      @default(1)
+  
+  is_default        Boolean  @default(false)
+  is_active         Boolean  @default(true)
+  template_version  Int      @default(2)
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 }
