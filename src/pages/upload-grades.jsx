@@ -155,7 +155,7 @@ export default function UploadGradesPage() {
                 if (studentEmail && !studentMap.has(studentEmail.toLowerCase())) {
                     const cls = classMap.get(className?.toLowerCase())
                     const newSt = await MockApi.create(STORAGE_KEYS.STUDENTS, {
-                        email: studentEmail,
+                        email_school: studentEmail,
                         first_name: studentFirstName || 'Schüler',
                         last_name: studentLastName || 'Unbekannt',
                         class_id: cls?.id || '',
