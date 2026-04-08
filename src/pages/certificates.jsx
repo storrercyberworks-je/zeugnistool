@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MockApi, STORAGE_KEYS } from '@/lib/api'
-import { Plus, Search, FileText, Download, User, Trash2, Loader2, Eye, Printer, Filter, CheckCircle2, FileArchive, X } from 'lucide-react'
+import { api, STORAGE_KEYS } from '@/lib/api'
+import { Plus, Search, FileText, Download, User, Trash2, Loader2, Eye, Printer, Filter, CheckCircle2, FileArchive, X, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -23,7 +23,9 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { calculateAverages, getPredicate } from '@/lib/grading-utils'
 import { evaluateReexamination, evaluatePromotion } from '@/lib/reexamination'
 import html2canvas from 'html2canvas'
@@ -39,59 +41,93 @@ export default function CertificatesPage() {
     const [viewingCert, setViewingCert] = useState(null)
     const [selectedStudent, setSelectedStudent] = useState('')
     const [selectedTemplate, setSelectedTemplate] = useState('')
-    const [selectedClass, setSelectedClass] = useState('all')
+    const [selectedClass, setSelectedClass] = useState('')
     const [previewHtml, setPreviewHtml] = useState('')
     const [isGenerating, setIsGenerating] = useState(false)
     const [batchProgress, setBatchProgress] = useState(null)
+    const [classPreview, setClassPreview] = useState([])
+    const [archiveFilterClass, setArchiveFilterClass] = useState('all')
+    const [archiveFilterYear, setArchiveFilterYear] = useState('all')
     const exportFrameRef = useRef(null)
 
     const { data: certificates = [], isLoading: loadingCerts } = useQuery({
         queryKey: [STORAGE_KEYS.CERTIFICATES],
-        queryFn: () => MockApi.list(STORAGE_KEYS.CERTIFICATES),
+        queryFn: () => api.list(STORAGE_KEYS.CERTIFICATES),
     })
 
     const { data: classes = [] } = useQuery({
         queryKey: [STORAGE_KEYS.CLASSES],
-        queryFn: () => MockApi.list(STORAGE_KEYS.CLASSES),
+        queryFn: () => api.list(STORAGE_KEYS.CLASSES),
     })
 
     const { data: students = [] } = useQuery({
         queryKey: [STORAGE_KEYS.STUDENTS],
-        queryFn: () => MockApi.list(STORAGE_KEYS.STUDENTS),
+        queryFn: () => api.list(STORAGE_KEYS.STUDENTS),
     })
 
     const { data: templates = [] } = useQuery({
         queryKey: [STORAGE_KEYS.TEMPLATES],
-        queryFn: () => MockApi.list(STORAGE_KEYS.TEMPLATES),
+        queryFn: () => api.list(STORAGE_KEYS.TEMPLATES),
     })
 
     const { data: grades = [] } = useQuery({
         queryKey: [STORAGE_KEYS.GRADES],
-        queryFn: () => MockApi.list(STORAGE_KEYS.GRADES),
+        queryFn: () => api.list(STORAGE_KEYS.GRADES),
     })
 
     const { data: subjects = [] } = useQuery({
         queryKey: [STORAGE_KEYS.SUBJECTS],
-        queryFn: () => MockApi.list(STORAGE_KEYS.SUBJECTS),
+        queryFn: () => api.list(STORAGE_KEYS.SUBJECTS),
+    })
+
+    const { data: completenessData } = useQuery({
+        queryKey: ['completeness', selectedClass],
+        queryFn: () => api.list('completeness', { class_id: selectedClass }),
+        enabled: !!selectedClass && selectedClass !== 'all'
     })
 
     const createMutation = useMutation({
-        mutationFn: (data) => MockApi.create(STORAGE_KEYS.CERTIFICATES, data),
+        mutationFn: (data) => api.create(STORAGE_KEYS.CERTIFICATES, data),
         onSuccess: () => {
             queryClient.invalidateQueries([STORAGE_KEYS.CERTIFICATES])
-            toast({ title: 'Erfolg', description: 'Zeugnis wurde gespeichert.' })
-            setIsDialogOpen(false)
-            setPreviewHtml('')
         },
     })
 
     const deleteMutation = useMutation({
-        mutationFn: (id) => MockApi.delete(STORAGE_KEYS.CERTIFICATES, id),
+        mutationFn: (id) => api.delete(STORAGE_KEYS.CERTIFICATES, id),
         onSuccess: () => {
             queryClient.invalidateQueries([STORAGE_KEYS.CERTIFICATES])
             toast({ title: 'Erfolg', description: 'Eintrag gelöscht.' })
         },
     })
+
+    // Prepare Class Validation Preview
+    useEffect(() => {
+        if (!selectedClass || selectedClass === 'all') {
+            setClassPreview([])
+            return
+        }
+        
+        const clsStudents = students.filter(s => s.class_id === selectedClass)
+        const preview = clsStudents.map(student => {
+            const completeness = completenessData?.perStudent?.[student.id] || { missingModules: [], totalMissingCount: 0 }
+            return {
+                ...student,
+                isComplete: completeness.totalMissingCount === 0,
+                completeness
+            }
+        }).sort((a, b) => a.last_name.localeCompare(b.last_name))
+        
+        setClassPreview(preview)
+    }, [selectedClass, students, completenessData])
+
+    const filteredCertificates = useMemo(() => {
+        return certificates.filter(c => {
+            const matchClass = archiveFilterClass === 'all' || c.class_id === archiveFilterClass;
+            const matchYear = archiveFilterYear === 'all' || c.school_year === archiveFilterYear;
+            return matchClass && matchYear;
+        }).sort((a, b) => new Date(b.issue_date) - new Date(a.issue_date))
+    }, [certificates, archiveFilterClass, archiveFilterYear])
 
     const generateHtmlForStudent = (studentId, templateId) => {
         const student = students.find(s => s.id === studentId)
@@ -142,40 +178,64 @@ export default function CertificatesPage() {
         setPreviewHtml(result.html)
     }
 
-    const handleSave = () => {
+    const handleSave = async () => {
         const result = generateHtmlForStudent(selectedStudent, selectedTemplate)
         if (result?.data) {
-            createMutation.mutate(result.data)
+            await createMutation.mutateAsync(result.data)
+            toast({ title: 'Erfolg', description: 'Zeugnis wurde gespeichert.' })
+            setIsDialogOpen(false)
+            setPreviewHtml('')
         }
     }
 
+    const generateBatch = async (onlyComplete) => {
+        if (!selectedClass || !selectedTemplate) return;
+        setIsGenerating(true)
+        
+        const toGenerate = classPreview.filter(s => onlyComplete ? s.isComplete : true)
+        
+        for (let i = 0; i < toGenerate.length; i++) {
+            const stu = toGenerate[i];
+            setBatchProgress({ current: i + 1, total: toGenerate.length, name: `${stu.first_name} ${stu.last_name}` })
+            const result = generateHtmlForStudent(stu.id, selectedTemplate)
+            if (result?.data) {
+                await createMutation.mutateAsync(result.data)
+            }
+            await new Promise(r => setTimeout(r, 10))
+        }
+
+        toast({ title: 'Erfolg', description: `${toGenerate.length} Klassenzeugnisse wurden generiert und archiviert.` })
+        setIsGenerating(false)
+        setBatchProgress(null)
+        setIsDialogOpen(false)
+    }
+
     const exportToPdf = async (cert, silent = false) => {
-        const iframe = exportFrameRef.current
-        if (!iframe) return
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Render off-screen, using the main application's Tailwind CSS already loaded by Vite
+                const hiddenContainer = document.createElement('div');
+                hiddenContainer.style.position = 'fixed';
+                hiddenContainer.style.top = '0';
+                hiddenContainer.style.left = '0';
+                hiddenContainer.style.opacity = '0';
+                hiddenContainer.style.pointerEvents = 'none';
+                hiddenContainer.style.zIndex = '-9999';
+                
+                hiddenContainer.innerHTML = cert.notes;
+                document.body.appendChild(hiddenContainer);
 
-        return new Promise((resolve) => {
-            iframe.srcdoc = `
-                <html>
-                    <head>
-                        <script src="https://cdn.tailwindcss.com"></script>
-                        <style>
-                            body { margin: 0; padding: 0; width: 210mm; min-height: 297mm; }
-                            @page { size: A4; margin: 0; }
-                        </style>
-                    </head>
-                    <body>${cert.notes}</body>
-                </html>
-            `;
+                // Wait for any base64 images to parse and render
+                await new Promise(r => setTimeout(r, 200));
 
-            iframe.onload = async () => {
-                // Wait for styles and images
-                await new Promise(r => setTimeout(r, 1000));
-
-                const canvas = await html2canvas(iframe.contentDocument.body, {
+                const canvas = await html2canvas(hiddenContainer.firstChild, {
                     scale: 2,
                     useCORS: true,
-                    logging: false
+                    logging: false,
+                    windowWidth: 1000 // Prevent mobile viewport issues
                 });
+
+                document.body.removeChild(hiddenContainer);
 
                 const imgData = canvas.toDataURL('image/jpeg', 0.95);
                 const pdf = new jsPDF('p', 'mm', 'a4');
@@ -187,18 +247,21 @@ export default function CertificatesPage() {
                     pdf.save(`Zeugnis_${cert.student_name.replace(/\s/g, '_')}.pdf`);
                     resolve();
                 }
-            };
+            } catch (err) {
+                console.error("PDF Export failed:", err);
+                reject(err);
+            }
         });
     }
 
     const handleBatchExport = async () => {
-        if (certificates.length === 0) return;
+        if (filteredCertificates.length === 0) return;
         setIsGenerating(true);
         const zip = new JSZip();
 
-        for (let i = 0; i < certificates.length; i++) {
-            const cert = certificates[i];
-            setBatchProgress({ current: i + 1, total: certificates.length, name: cert.student_name });
+        for (let i = 0; i < filteredCertificates.length; i++) {
+            const cert = filteredCertificates[i];
+            setBatchProgress({ current: i + 1, total: filteredCertificates.length, name: cert.student_name });
             const pdfBlob = await exportToPdf(cert, true);
             zip.file(`Zeugnis_${cert.student_name.replace(/\s/g, '_')}.pdf`, pdfBlob);
         }
@@ -207,7 +270,8 @@ export default function CertificatesPage() {
         const url = URL.createObjectURL(content);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Zeugnisse_${new Date().toISOString().split('T')[0]}.zip`;
+        const className = archiveFilterClass !== 'all' ? (classes.find(c => c.id === archiveFilterClass)?.name || archiveFilterClass) : 'Alle';
+        link.download = `Zeugnisse_${className}_${new Date().toISOString().split('T')[0]}.zip`;
         link.click();
 
         setIsGenerating(false);
@@ -228,7 +292,7 @@ export default function CertificatesPage() {
                     <Button variant="outline" onClick={() => setIsDialogOpen(true)}>
                         <Plus className="mr-2 h-4 w-4" /> Einzelzeugnis
                     </Button>
-                    <Button onClick={handleBatchExport} disabled={isGenerating || certificates.length === 0}>
+                    <Button onClick={handleBatchExport} disabled={isGenerating || filteredCertificates.length === 0}>
                         {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileArchive className="mr-2 h-4 w-4" />}
                         Batch Export (ZIP)
                     </Button>
@@ -248,9 +312,29 @@ export default function CertificatesPage() {
             )}
 
             <Card>
-                <CardHeader>
-                    <CardTitle>Archiv</CardTitle>
-                    <CardDescription>Gespeicherte HTML-Zeugnisse.</CardDescription>
+                <CardHeader className="flex flex-col md:flex-row md:items-center justify-between pb-2">
+                    <div>
+                        <CardTitle>Archiv</CardTitle>
+                        <CardDescription>Gespeicherte Zeugnisse filtern & exportieren.</CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                        <select
+                            className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                            value={archiveFilterYear}
+                            onChange={(e) => setArchiveFilterYear(e.target.value)}
+                        >
+                            <option value="all">Alle Schuljahre</option>
+                            <option value="2024/2025">2024/2025</option>
+                        </select>
+                        <select
+                            className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                            value={archiveFilterClass}
+                            onChange={(e) => setArchiveFilterClass(e.target.value)}
+                        >
+                            <option value="all">Alle Klassen</option>
+                            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     {loadingCerts ? (
@@ -268,12 +352,12 @@ export default function CertificatesPage() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {certificates.length === 0 ? (
+                                    {filteredCertificates.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="h-24 text-center">Keine Einträge.</TableCell>
+                                            <TableCell colSpan={5} className="h-24 text-center">Keine Einträge für diese Filter.</TableCell>
                                         </TableRow>
                                     ) : (
-                                        certificates.map((cert) => (
+                                        filteredCertificates.map((cert) => (
                                             <TableRow key={cert.id}>
                                                 <TableCell className="font-semibold">{cert.student_name}</TableCell>
                                                 <TableCell>{cert.class_name}</TableCell>
@@ -300,8 +384,8 @@ export default function CertificatesPage() {
                 </CardContent>
             </Card>
 
-            {/* View Dialog */}
-            <Dialog open={!!viewingCert} onOpenChange={() => setViewingCert(null)}>
+                {/* Modals & Previews */}
+            <Dialog open={!!viewingCert} onOpenChange={(open) => !open && setViewingCert(null)}>
                 <DialogContent className="max-w-[900px] h-[90vh] flex flex-col p-0">
                     <DialogHeader className="p-6 pb-0">
                         <div className="flex items-center justify-between">
@@ -340,76 +424,165 @@ export default function CertificatesPage() {
                         <DialogDescription>Template-basierte HTML Erstellung.</DialogDescription>
                     </DialogHeader>
 
-                    <div className="flex-1 overflow-hidden flex p-6 gap-6">
-                        <div className="w-1/3 space-y-4 overflow-auto pr-2">
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">Klasse</label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                    value={selectedClass}
-                                    onChange={(e) => setSelectedClass(e.target.value)}
-                                >
-                                    <option value="all">Alle</option>
-                                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">Schüler</label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                    value={selectedStudent}
-                                    onChange={(e) => setSelectedStudent(e.target.value)}
-                                >
-                                    <option value="">Wählen...</option>
-                                    {students.filter(s => selectedClass === 'all' || s.class_id === selectedClass).map(s => (
-                                        <option key={s.id} value={s.id}>{s.last_name}, {s.first_name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">Vorlage</label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                    value={selectedTemplate}
-                                    onChange={(e) => setSelectedTemplate(e.target.value)}
-                                >
-                                    <option value="">Wählen...</option>
-                                    {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
-                            </div>
-
-                            <Button className="w-full h-10" onClick={handlePreview} disabled={!selectedStudent || !selectedTemplate}>
-                                <Eye className="mr-2 h-4 w-4" /> Vorschau laden
-                            </Button>
-
-                            {previewHtml && (
-                                <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 animate-in slide-in-from-left-4">
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <div className="h-5 w-5 rounded-full bg-green-500/20 text-green-600 flex items-center justify-center">
-                                            <CheckCircle2 className="h-3 w-3" />
-                                        </div>
-                                        <span className="text-sm font-bold text-primary">Generierung bereit</span>
+                    <div className="flex-1 overflow-hidden p-6 gap-6" style={{ display: 'block' }}>
+                        <Tabs defaultValue="klasse" className="h-full flex flex-col">
+                            <TabsList className="grid w-[400px] grid-cols-2 mb-4 mx-auto">
+                                <TabsTrigger value="klasse">Klassenweise</TabsTrigger>
+                                <TabsTrigger value="einzeln">Einzelzeugnis</TabsTrigger>
+                            </TabsList>
+                            
+                            <TabsContent value="klasse" className="flex-1 overflow-hidden flex flex-col gap-4 m-0 data-[state=inactive]:hidden outline-none">
+                                <div className="grid grid-cols-2 gap-4 flex-none border-b pb-6">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Klasse auswählen</label>
+                                        <select
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            value={selectedClass}
+                                            onChange={(e) => setSelectedClass(e.target.value)}
+                                        >
+                                            <option value="">Wählen...</option>
+                                            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        </select>
                                     </div>
-                                    <Button className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={handleSave} disabled={createMutation.isLoading}>
-                                        {createMutation.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Finalisieren & Archivieren'}
-                                    </Button>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Vorlage</label>
+                                        <select
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            value={selectedTemplate}
+                                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                                        >
+                                            <option value="">Wählen...</option>
+                                            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
-                            )}
-                        </div>
+                                <div className="flex-1 overflow-auto border rounded-lg bg-gray-50/50">
+                                    {selectedClass ? (
+                                        <Table>
+                                            <TableHeader className="bg-muted/50 sticky top-0">
+                                                <TableRow>
+                                                    <TableHead>Schüler</TableHead>
+                                                    <TableHead>Status</TableHead>
+                                                    <TableHead>Details</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {classPreview.map((s) => (
+                                                    <TableRow key={s.id} className={!s.isComplete ? "bg-orange-50/30" : ""}>
+                                                        <TableCell className="font-semibold">{s.first_name} {s.last_name}</TableCell>
+                                                        <TableCell>
+                                                            {s.isComplete ? (
+                                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200"><CheckCircle2 className="h-3 w-3 mr-1" /> Vollständig</Badge>
+                                                            ) : (
+                                                                <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200"><AlertTriangle className="h-3 w-3 mr-1" /> Unvollständig</Badge>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-xs text-muted-foreground">
+                                                            {!s.isComplete ? (
+                                                                <span>Es fehlen {s.completeness.totalMissingCount} Noten in {s.completeness.missingModules.length} Modulen.</span>
+                                                            ) : (
+                                                                <span>Bereit.</span>
+                                                            )}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                                {classPreview.length === 0 && (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">Keine Schüler in dieser Klasse gefunden.</TableCell>
+                                                    </TableRow>
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-muted-foreground text-sm flex-col py-10 opacity-50">
+                                            <User className="h-12 w-12 mb-4" />
+                                            <p>Bitte wählen Sie eine Klasse aus</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex justify-between items-center bg-muted/20 p-4 rounded-lg flex-none mt-2">
+                                    <div className="text-sm">
+                                        <p className="font-bold">Zusammenfassung: {classPreview.length} Schüler</p>
+                                        <p className="text-muted-foreground">{classPreview.filter(s => s.isComplete).length} Volls., {classPreview.filter(s => !s.isComplete).length} Unvolls.</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button variant="outline" onClick={() => generateBatch(true)} disabled={!selectedClass || !selectedTemplate || isGenerating || classPreview.filter(s => s.isComplete).length === 0}>
+                                            Nur Vollständige generieren
+                                        </Button>
+                                        <Button className="bg-primary" onClick={() => generateBatch(false)} disabled={!selectedClass || !selectedTemplate || isGenerating || classPreview.length === 0}>
+                                            {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                            Alle {classPreview.length} generieren
+                                        </Button>
+                                    </div>
+                                </div>
+                            </TabsContent>
+                            
+                            <TabsContent value="einzeln" className="flex-1 overflow-hidden flex gap-6 m-0 data-[state=inactive]:hidden outline-none">
+                                <div className="w-1/3 flex flex-col space-y-4 overflow-auto pr-2">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Klasse</label>
+                                        <select
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            value={selectedClass}
+                                            onChange={(e) => setSelectedClass(e.target.value)}
+                                        >
+                                            <option value="">Alle</option>
+                                            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Schüler</label>
+                                        <select
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            value={selectedStudent}
+                                            onChange={(e) => setSelectedStudent(e.target.value)}
+                                        >
+                                            <option value="">Wählen...</option>
+                                            {students.filter(s => !selectedClass || selectedClass === 'all' || s.class_id === selectedClass).map(s => (
+                                                <option key={s.id} value={s.id}>{s.last_name}, {s.first_name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Vorlage</label>
+                                        <select
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                            value={selectedTemplate}
+                                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                                        >
+                                            <option value="">Wählen...</option>
+                                            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        </select>
+                                    </div>
 
-                        <div className="flex-1 bg-gray-100 border rounded-lg overflow-auto p-6 flex flex-col">
-                            {previewHtml ? (
-                                <div
-                                    className="bg-white p-12 shadow-2xl mx-auto w-[210mm] min-h-[297mm] max-w-none"
-                                    dangerouslySetInnerHTML={{ __html: previewHtml }}
-                                />
-                            ) : (
-                                <div className="flex-1 flex items-center justify-center text-muted-foreground flex-col opacity-30">
-                                    <FileText className="h-16 w-16 mb-4" />
-                                    <p>Wählen Sie Daten aus der linken Spalte</p>
+                                    <Button className="w-full h-10" onClick={handlePreview} disabled={!selectedStudent || !selectedTemplate}>
+                                        <Eye className="mr-2 h-4 w-4" /> Vorschau laden
+                                    </Button>
+
+                                    {previewHtml && (
+                                        <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 mt-auto">
+                                            <Button className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={handleSave} disabled={createMutation.isPending}>
+                                                {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Finalisieren & Archivieren'}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
+
+                                <div className="flex-1 bg-gray-100 border rounded-lg overflow-auto p-6 flex flex-col">
+                                    {previewHtml ? (
+                                        <div
+                                            className="bg-white p-12 shadow-2xl mx-auto w-[210mm] min-h-[297mm] max-w-none"
+                                            dangerouslySetInnerHTML={{ __html: previewHtml }}
+                                        />
+                                    ) : (
+                                        <div className="flex-1 flex items-center justify-center text-muted-foreground flex-col opacity-30">
+                                            <FileText className="h-16 w-16 mb-4" />
+                                            <p>Wählen Sie Daten aus der linken Spalte</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </TabsContent>
+                        </Tabs>
                     </div>
                 </DialogContent>
             </Dialog>

@@ -58,7 +58,7 @@ export default function GradesPage() {
 
     const { data: completenessData } = useQuery({
         queryKey: ['completeness', filterClass],
-        queryFn: () => api.get('completeness', { classId: filterClass }),
+        queryFn: () => api.list('completeness', { class_id: filterClass }),
         enabled: filterClass !== 'all'
     })
 
