@@ -23,16 +23,23 @@ export default function TenantSelect() {
         );
     }
 
-    if (allowedTenants.length === 1 && activeTenant) {
+    if (allowedTenants.length === 1 && activeTenant && !isSwitching) {
         return <Navigate to="/dashboard" replace />;
     }
 
+    // Effect to navigate only when context is actually updated!
+    React.useEffect(() => {
+        if (activeTenant && isSwitching === activeTenant.id) {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [activeTenant, isSwitching, navigate]);
+
     const handleSelect = async (tenantId) => {
-        console.log("Tenant selected:", tenantId);
         setIsSwitching(tenantId);
         try {
             await switchTenant(tenantId);
-            navigate('/dashboard', { replace: true });
+            // We do NOT navigate immediately here to avoid race conditions with ProtectedRoute.
+            // The useEffect above handles it once the AuthContext updates.
         } catch (error) {
             console.error("switchTenant failed", error);
             setIsSwitching(null);

@@ -93,12 +93,13 @@ export default function GradesPage() {
 
     // Grouping logic for "Student View"
     const studentsWithGrades = useMemo(() => {
-        // If a class is filtered, start with ALL students from that class
+        // Find base students for the class filter to show empty students as well
         const initialGrouped = {}
         if (filterClass !== 'all') {
-            students.forEach(s => {
-                initialGrouped[s.id] = {
-                    id: s.id,
+            students.filter(s => s.class_id === filterClass).forEach(s => {
+                const studentKey = `${(s.first_name + ' ' + s.last_name).toLowerCase().trim()}_${s.class_id}`;
+                initialGrouped[studentKey] = {
+                    id: s.id, // Keep one real ID for reference
                     name: `${s.first_name} ${s.last_name}`,
                     first_name: s.first_name,
                     last_name: s.last_name,
@@ -110,27 +111,49 @@ export default function GradesPage() {
             })
         }
 
+        // Strict grouping by Name + Class to merge duplicate student DB entries automatically
         const grouped = filteredGrades.reduce((acc, g) => {
-            if (!acc[g.student_id]) {
-                acc[g.student_id] = {
-                    id: g.student_id,
+            const studentKey = `${(g.student_name || 'unbekannt').toLowerCase().trim()}_${g.class_id}`;
+            
+            if (!acc[studentKey]) {
+                acc[studentKey] = {
+                    id: g.student_id, // Base ID
+                    real_ids: new Set([g.student_id]),
                     name: g.student_name,
                     class_name: g.class_name,
                     class_id: g.class_id,
                     subjects: {},
                     totalGrades: 0
                 }
+            } else if (acc[studentKey].real_ids) {
+                acc[studentKey].real_ids.add(g.student_id);
             }
-            if (!acc[g.student_id].subjects[g.subject_id]) {
-                acc[g.student_id].subjects[g.subject_id] = {
+
+            // Subject grouping
+            if (!acc[studentKey].subjects[g.subject_id]) {
+                acc[studentKey].subjects[g.subject_id] = {
                     id: g.subject_id,
                     name: g.subject_name,
                     grades: []
                 }
             }
-            acc[g.student_id].subjects[g.subject_id].grades.push(g)
-            acc[g.student_id].totalGrades++
-            return acc
+
+            // Deduplicate grades that might have been imported multiple times (same value, weight, name, semester)
+            const existingGrades = acc[studentKey].subjects[g.subject_id].grades;
+            const duplicate = existingGrades.find(existing => 
+                existing.grade_value === g.grade_value && 
+                existing.weight === g.weight && 
+                existing.learning_field_name === g.learning_field_name &&
+                existing.semester === g.semester &&
+                existing.school_year === g.school_year
+            );
+
+            if (!duplicate) {
+                existingGrades.push(g);
+                acc[studentKey].totalGrades++;
+            }
+
+            return acc;
         }, initialGrouped)
 
         const studentList = Object.values(grouped).map(s => {
