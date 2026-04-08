@@ -251,7 +251,7 @@ export default function BulkUpload() {
                         )}
                     </div>
 
-                    {previewData && (
+                    {previewData && previewData.length > 0 && (
                         <div className="space-y-4 animate-in slide-in-from-bottom-2">
                             <h3 className="font-bold flex items-center gap-2">
                                 <Database className="h-4 w-4" /> Vorschau ({previewData.length} Zeilen)
