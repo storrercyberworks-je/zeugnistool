@@ -3,10 +3,10 @@ import { useAuth } from '@/lib/auth';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { School, ArrowRight, Loader2 } from 'lucide-react';
+import { School, ArrowRight, Loader2, LogOut } from 'lucide-react';
 
 export default function TenantSelect() {
-    const { user, allowedTenants, activeTenant, switchTenant, isLoading } = useAuth();
+    const { user, allowedTenants, activeTenant, switchTenant, isLoading, logout } = useAuth();
     const navigate = useNavigate();
     const [isSwitching, setIsSwitching] = React.useState(null);
 
@@ -43,13 +43,22 @@ export default function TenantSelect() {
         } catch (error) {
             console.error("switchTenant failed", error);
             setIsSwitching(null);
+            alert(`Ein Serverfehler ist aufgetreten: ${error.message || 'Bitte später erneut versuchen'}`);
         }
     };
 
     return (
         <div className="flex min-h-screen w-full items-center justify-center bg-muted/40 p-4">
             <div className="w-full max-w-2xl">
-                <div className="text-center mb-10 space-y-2">
+                <div className="text-center mb-10 space-y-2 relative">
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="absolute right-0 top-0 text-muted-foreground hover:text-destructive"
+                        onClick={logout}
+                    >
+                        <LogOut className="mr-2 h-4 w-4" /> Abmelden
+                    </Button>
                     <h1 className="text-3xl font-black text-primary">NotenMeister</h1>
                     <p className="text-xl text-muted-foreground">Willkommen zurück, {user.full_name}</p>
                 </div>
