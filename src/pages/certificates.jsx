@@ -137,18 +137,41 @@ export default function CertificatesPage() {
         const semester = '1. Halbjahr'
         const school_year = '2024/2025'
 
+        // Strict name-based fetching to bypass duplicate DB student records (mirroring Notenverwaltung logic)
+        const studentNameLower = `${student.first_name} ${student.last_name}`.toLowerCase().trim();
+        const studentGradesRaw = grades.filter(g => 
+            (g.student_name || '').toLowerCase().trim() === studentNameLower &&
+            g.class_id === student.class_id
+        );
+
+        // Deduplicate grades to avoid duplicate averages
+        const uniqueGrades = [];
+        studentGradesRaw.forEach(g => {
+            const duplicate = uniqueGrades.find(existing => 
+                existing.subject_id === g.subject_id &&
+                existing.grade_value === g.grade_value && 
+                existing.weight === g.weight && 
+                existing.learning_field_name === g.learning_field_name &&
+                existing.semester === g.semester &&
+                existing.school_year === g.school_year
+            );
+            if (!duplicate) {
+                uniqueGrades.push(g);
+            }
+        });
+
         // Render React Component directly to HTML String!
         const html = ReactDOMServer.renderToString(
             <CertificateLayout 
                 student={student} 
-                grades={grades.filter(g => g.student_id === student.id)} 
+                grades={uniqueGrades} 
                 subjects={subjects} 
                 template={template} 
             />
         )
 
         // Calculate global average manually
-        const globalAvg = calculateAverages(grades.filter(g => g.student_id === student.id), 1, 0.1).final;
+        const globalAvg = calculateAverages(uniqueGrades, 1, 0.1).final;
 
         return {
             html,
@@ -161,7 +184,7 @@ export default function CertificatesPage() {
                 school_year,
                 issue_date: new Date().toISOString(),
                 average_grade: globalAvg || 0,
-                grades_count: grades.filter(g => g.student_id === student.id).length,
+                grades_count: uniqueGrades.length,
                 status: 'generiert',
                 notes: html, // We can still store the generated DOM layout for stability 
                 verification_code: Math.random().toString(36).substring(2, 10).toUpperCase()

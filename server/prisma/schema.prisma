@@ -90,6 +90,7 @@ model Student {
   class_name     String
   school_year    String?  @default("2024/2025")
   student_number String?
+  dispensations  String?
   remarks        String?
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt

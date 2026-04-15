@@ -97,7 +97,8 @@ export default function StudentsPage() {
     const filteredStudents = (students || []).filter(s =>
         `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.class_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        s.class_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.dispensations?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     const openEdit = (student) => {
@@ -149,6 +150,7 @@ export default function StudentsPage() {
                                     <TableRow className="bg-muted/50">
                                         <TableHead>Name</TableHead>
                                         <TableHead>Klasse</TableHead>
+                                        <TableHead>Dispenzen</TableHead>
                                         <TableHead>Kontakt</TableHead>
                                         <TableHead>Geburtsdatum</TableHead>
                                         <TableHead className="text-right">Aktionen</TableHead>
@@ -174,6 +176,15 @@ export default function StudentsPage() {
                                                     <Badge variant="outline" className="flex w-fit items-center gap-1">
                                                         <GraduationCap className="h-3 w-3" /> {student.class_name || 'Keine Klasse'}
                                                     </Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {student.dispensations ? (
+                                                        <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-bold">
+                                                            {student.dispensations}
+                                                        </Badge>
+                                                    ) : (
+                                                        <span className="text-muted-foreground text-xs">-</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center text-xs text-muted-foreground">
@@ -258,6 +269,10 @@ export default function StudentsPage() {
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Adresse</label>
                                 <Input name="address" defaultValue={editingStudent?.address} />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Dispenzen</label>
+                                <Input name="dispensations" defaultValue={editingStudent?.dispensations} placeholder="z.B. Sport, Französisch (optional)" />
                             </div>
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Bemerkungen</label>
