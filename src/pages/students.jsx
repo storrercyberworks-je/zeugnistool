@@ -59,6 +59,9 @@ export default function StudentsPage() {
             setIsDialogOpen(false)
             toast({ title: 'Erfolg', description: 'Schüler wurde erstellt.' })
         },
+        onError: (error) => {
+            toast({ variant: 'destructive', title: 'Fehler', description: error.message || 'Schüler konnte nicht erstellt werden.' })
+        }
     })
 
     const updateMutation = useMutation({
@@ -68,6 +71,9 @@ export default function StudentsPage() {
             setIsDialogOpen(false)
             toast({ title: 'Erfolg', description: 'Schüler wurde aktualisiert.' })
         },
+        onError: (error) => {
+            toast({ variant: 'destructive', title: 'Fehler', description: error.message || 'Schüler konnte nicht gespeichert werden.' })
+        }
     })
 
     const deleteMutation = useMutation({
@@ -76,6 +82,9 @@ export default function StudentsPage() {
             queryClient.invalidateQueries([STORAGE_KEYS.STUDENTS])
             toast({ title: 'Erfolg', description: 'Schüler wurde gelöscht.' })
         },
+        onError: (error) => {
+            toast({ variant: 'destructive', title: 'Fehler', description: error.message || 'Schüler konnte nicht gelöscht werden.' })
+        }
     })
 
     const handleSubmit = (e) => {
@@ -85,7 +94,19 @@ export default function StudentsPage() {
 
         // Find class name
         const selectedClass = classes.find(c => c.id === data.class_id)
-        const payload = { ...data, class_name: selectedClass?.name || '' }
+        
+        // Map form fields exactly to Prisma Schema fields!
+        const payload = { 
+            first_name: data.first_name,
+            last_name: data.last_name,
+            email_school: data.email || null,
+            birth_date: data.date_of_birth || null,
+            address: data.address || null,
+            dispensations: data.dispensations || null,
+            remarks: data.remarks || null,
+            class_id: data.class_id,
+            class_name: selectedClass?.name || ''
+        }
 
         if (editingStudent) {
             updateMutation.mutate({ id: editingStudent.id, data: payload })
@@ -96,7 +117,7 @@ export default function StudentsPage() {
 
     const filteredStudents = (students || []).filter(s =>
         `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.email_school?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.class_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.dispensations?.toLowerCase().includes(searchTerm.toLowerCase())
     )
@@ -188,10 +209,10 @@ export default function StudentsPage() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center text-xs text-muted-foreground">
-                                                        <Mail className="mr-1 h-3 w-3" /> {student.email || '-'}
+                                                        <Mail className="mr-1 h-3 w-3" /> {student.email_school || '-'}
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>{student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString('de-DE') : '-'}</TableCell>
+                                                <TableCell>{student.birth_date ? new Date(student.birth_date).toLocaleDateString('de-CH') : '-'}</TableCell>
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
@@ -244,7 +265,7 @@ export default function StudentsPage() {
                             </div>
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Email (Identifikator)</label>
-                                <Input name="email" type="email" defaultValue={editingStudent?.email} placeholder="student@beispiel.de" />
+                                <Input name="email" type="email" defaultValue={editingStudent?.email_school} placeholder="student@beispiel.de" />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
@@ -263,7 +284,7 @@ export default function StudentsPage() {
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Geburtsdatum</label>
-                                    <Input name="date_of_birth" type="date" defaultValue={editingStudent?.date_of_birth} />
+                                    <Input name="date_of_birth" type="date" defaultValue={editingStudent?.birth_date} />
                                 </div>
                             </div>
                             <div className="space-y-2">
